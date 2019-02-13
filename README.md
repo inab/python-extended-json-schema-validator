@@ -1,6 +1,6 @@
 # FAIRification Genomic Data Tracks JSON Schema validation, Python edition
 
-The JSON schema should be compliant with JSON Schema Draft04 specification.
+The JSON schema should be compliant with JSON Schema Draft04, Draft06 or Draft07 specifications.
 
 So, this validation program uses libraries compliant with that specification.
 
