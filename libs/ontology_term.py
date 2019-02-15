@@ -12,6 +12,12 @@ import urllib
 import sys
 
 class OntologyTerm(object):
+	VALID_MATCHES = {
+		'exact': 'iri',
+		'suffix': 'iri',
+		'label': 'label'
+	}
+	
 	def __init__(self,term):
 		self.term = term
 	
@@ -19,9 +25,11 @@ class OntologyTerm(object):
 	def GetWorld(cls):
 		if not hasattr(cls,'TermWorld'):
 			cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
-			ontologiesPath = os.path.join(cachePath,'ontologies')
-			os.makedirs(ontologiesPath,exist_ok=True)
-			owlready2.onto_path.append(ontologiesPath)
+			
+			# Activate this only if you want to save a copy of the ontologies
+			#ontologiesPath = os.path.join(cachePath,'ontologies')
+			#os.makedirs(ontologiesPath,exist_ok=True)
+			#owlready2.onto_path.append(ontologiesPath)
 			setattr(cls,'TermWorld',owlready2.World(filename=os.path.join(cachePath,'owlready2.sqlite3'), exclusive=False))
 		
 		return getattr(cls,'TermWorld')
@@ -29,16 +37,71 @@ class OntologyTerm(object):
 	def isValid(self,validator,ontlist,origValue,schema):
 		w = OntologyTerm.GetWorld()
 		
+		# Getting the potential parents
+		ancestors = schema.get('ancestors',[])
+		partialMatches = str(schema.get('matchType','exact'))
+		
+		if partialMatches not in OntologyTerm.VALID_MATCHES:
+			raise ValidationError("attribute 'matchType' is {0} but it must be one of the next values: {1}".format(partialMatches,OntologyTerm.VALID_MATCHES.keys()))
+		
+		if not isinstance(ancestors,list):
+			ancestors = [ ancestors ]
+		
+		if partialMatches == 'suffix':
+			ancestorPats = [ '*' + ancestor   for ancestor in ancestors ]
+		else:
+			ancestorPats = ancestors
+		
+		searchType = OntologyTerm.VALID_MATCHES[partialMatches]
+		
+		termPat = '*' + self.term  if partialMatches == 'suffix' else self.term
+		queryParams = {
+			searchType: termPat 
+		}
 		isValid = False
 		for ontology in ontlist:
+			print(ontology,file=sys.stderr)
 			onto = w.get_ontology(ontology).load()
-			onto.save()
+			w.save()
+			# Only activate this if you want a copy of the ontology,
+			# but it fires revalidations everytime!
+			#onto.save()
 			
-			if len(onto.search(iri = ('*' + self.term))) > 0:
-				isValid = True
+			foundTerms = onto.search(**queryParams)
+			# Is the term findable with these conditions?
+			if foundTerms:
+				if ancestors:
+					# Searching ancestors' terms
+					foundAncestors = []
+					for ancestorPat in ancestorPats:
+						foundAncestors.extend(onto.search(iri = ancestorPat))
+					
+					# Skip to the next if the list is empty
+					if not foundAncestors:
+						continue
+					
+					foundAncestorsSet = set(foundAncestors)
+					
+					# Now, find terms with these ancestors validate against the parents
+					for foundTerm in foundTerms:
+						termAncestors = foundTerm.ancestors()
+						if termAncestors.intersection(foundAncestorsSet):
+							isValid = True
+							break
+					
+					# Continue searching
+					if not isValid:
+						continue
+				else:
+					isValid = True
 				break
 		
-		return isValid
+		if not isValid:
+			if ancestors:
+				raise ValidationError("Term {0} , forced to have ancestors {1} was not found in these ontologies: {2}".format(self.term,ancestors,ontlist))
+			else:
+				raise ValidationError("Term {0} was not found in these ontologies: {1}".format(self.term,ontlist))
+		return True
 	
 	@classmethod
 	def IsTerm(cls,checker,instance):
@@ -84,6 +147,8 @@ class OntologyTerm(object):
 		#	pprint.pprint(v)
 		#	pprint.pprint(tr)
 		#	sys.exit(1)
+		except ValidationError as v:
+			yield v
 		except ValueError as ve:
 			yield ValidationError("Unable to parse ontology {0}: {1}".format(ontlist,str(ve)))
 		except urllib.error.HTTPError as he:
