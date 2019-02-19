@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import rfc3987
+import uritools
+from jsonschema.compat import str_types
+from jsonschema.exceptions import FormatError, ValidationError
+
+from .curie_cache import CurieCache, Curie
+import re
+import xdg
+import os
+
+class CurieSearch(object):
+	VALID_MATCHES = {
+		'canonical': None,
+		'loose': None,
+		'basic': None
+	}
+	
+	def __init__(self,curie):
+		if isinstance(curie,object):
+			self.curie = curie
+		else:
+			self.curie = uritools.urisplit(curie)
+	
+	def isValid(self,validator,nslist,origValue,schema):
+		found = False
+		matchType = str(schema.get('matchType','loose'))
+		if matchType not in CurieSearch.VALID_MATCHES:
+			raise ValidationError("attribute 'matchType' is {0} but it must be one of the next values: {1}".format(matchType,CurieSearch.VALID_MATCHES.keys()))
+		
+		cache = CurieSearch.GetCurieCache()
+		
+		parsed = None
+		try:
+			parsed = rfc3987.parse(origValue, rule="URI")
+		except BaseException as be:
+			if matchType != 'loose':
+				raise be
+		# Trying to decide the matching mode
+		if parsed:
+			prefix = parsed.get('scheme')
+			if prefix:
+				if (len(prefix) > 0) and (matchType == 'loose'):
+					matchType = 'canonical'
+				else:
+					prefix = None
+		else:
+			prefix = None
+		
+		if matchType == 'basic':
+			# Basic mode is like canonical, but without querying identifiers.org cache
+			found = nslist and (prefix in nslist)
+		elif matchType == 'loose':
+			if nslist:
+				valToVal = origValue
+				validatedCURIEs = list(filter(lambda curie: curie is not None,map(lambda namespace: cache.get(namespace),nslist)))
+				if not validatedCURIEs:
+					raise ValidationError('No namespace found in identifiers.org cache')
+				
+				# Looking for a match
+				for curie in validatedCURIEs:
+					pat = re.compile(curie.pattern)
+					if pat.search(valToVal):
+						found = True
+						break
+			else:
+				raise ValidationError('In "loose" mode, at least one namespace must be declared')
+		elif prefix is None:
+			raise ValidationError('In "canonical" mode, the value must be prefixed by the namespace')
+		else:
+			# Searching in canonical mode. To do that, we have to remove the prefix
+			valToVal = origValue[(origValue.find(':')+1):]
+			# The case where the namespace list is empty
+			if nslist and (prefix not in nslist):
+				raise ValidationError('The namespace {} is not in the list of the accepted ones: {}'.format(prefix,nslist))
+			
+			curie = cache.get(prefix)
+			if not curie:
+				raise ValidationError('The namespace {} was not found in identifiers.org cache'.format(prefix))
+		
+			pat = re.compile(curie.pattern)
+			found = pat.search(valToVal) or pat.search(origVal)
+		
+		return found
+	
+	@classmethod
+	def GetCurieCache(cls):
+		if not hasattr(cls,'CurieCache'):
+			cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
+			
+			setattr(cls,'CurieCache',CurieCache(filename=os.path.join(cachePath,'CURIE_cache.sqlite3')))
+		
+		return getattr(cls,'CurieCache')
+	
+	@classmethod
+	def IsCurie(cls,checker,instance):
+		if isinstance(instance,Curie):
+			return True
+		
+		if not isinstance(instance, str_types):
+			return False
+		
+		parsed = rfc3987.parse(instance, rule="URI")
+		if parsed and parsed.get('scheme'):
+			cache = cls.GetCurieCache()
+			curie = cache.get(parsed.get('scheme'))
+			pat = re.compile(curie.pattern)
+			return pat.search(instance[(instance.find(':')+1):])
+		else:
+			return False
+	
+	@classmethod
+	def IsValidCurie(cls,validator,namespace,value,schema):
+		# First, having something workable
+		try:
+			if isinstance(value,cls):
+				curieS = value
+			else:
+				curieS = cls(value)
+			
+			nslist = namespace  if isinstance(namespace,list) else [ namespace ]
+			
+			# Now, let's check!
+			if not curieS.isValid(validator,nslist,value,schema):
+				yield ValidationError("CURIE {0} does not belong to one of the allowed schemes: {1}".format(value,nslist))
+		except ValidationError as v:
+			yield v
+		except ValueError as ve:
+			yield ValidationError("Unable to parse CURIE {0}: {1}".format(value,str(ve)))
+		except BaseException as be:
+			yield ValidationError("Unexpected error: {}".format(str(be)))

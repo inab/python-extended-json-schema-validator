@@ -60,7 +60,6 @@ class OntologyTerm(object):
 		}
 		isValid = False
 		for ontology in ontlist:
-			print(ontology,file=sys.stderr)
 			onto = w.get_ontology(ontology).load()
 			w.save()
 			# Only activate this if you want a copy of the ontology,
@@ -114,10 +113,10 @@ class OntologyTerm(object):
 	@classmethod
 	def IsValidTerm(cls,validator,ontology,value,schema):
 		# First, having something workable
-		if isinstance(value,OntologyTerm):
+		if isinstance(value,cls):
 			term = value
 		else:
-			term = OntologyTerm(value)
+			term = cls(value)
 		ontlist = ontology  if isinstance(ontology,list) else [ ontology ]
 		try:
 			

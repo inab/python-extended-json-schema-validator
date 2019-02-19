@@ -86,16 +86,16 @@ def findFKs(jsonSchema,jsonSchemaURI,prefix=""):
 	return FKs
 
 # Augmenting the supported types
-from libs.curie import Curie
+from libs.curie_search import CurieSearch
 from libs.ontology_term import OntologyTerm
 
 CustomTypes = {
-	'curie': Curie.IsCurie,
+	'curie': CurieSearch.IsCurie,
 	'term': OntologyTerm.IsTerm
 }
 
 CustomValidators = {
-	'namespace': Curie.IsValidCurie,
+	'namespace': CurieSearch.IsValidCurie,
 	'ontology': OntologyTerm.IsValidTerm
 }
 

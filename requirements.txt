@@ -3,3 +3,4 @@ jsonschema[format] >= 3.0.0b3
 uritools
 owlready2
 pyxdg
+dateparser
