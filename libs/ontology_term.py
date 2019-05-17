@@ -18,6 +18,9 @@ class OntologyTerm(object):
 		'label': 'label'
 	}
 	
+	FormatName = 'term'
+	KeyAttributeName = 'ontology'
+	
 	def __init__(self,term):
 		self.term = term
 	
@@ -112,47 +115,74 @@ class OntologyTerm(object):
 	
 	@classmethod
 	def IsValidTerm(cls,validator,ontology,value,schema):
-		# First, having something workable
-		if isinstance(value,cls):
-			term = value
-		else:
-			term = cls(value)
-		ontlist = ontology  if isinstance(ontology,list) else [ ontology ]
-		try:
+		"""
+		This method is here to be registered with custom validators
+		"""
+		# We do the validation only when the format is defined
+		if schema.get("format") == cls.FormatName:
+			if ontology is None:
+				yield ValidationError("Attribute {0} has not been defined".format(cls.KeyAttributeName))
 			
-			isValid = True
-			for ont in ontlist:
-				parsed_ont = rfc3987.parse(ont, rule="URI")
+			ontlist = ontology  if isinstance(ontology,list) else [ ontology ]
+			
+			if len(ontlist) == 0:
+				yield ValidationError("Attribute {0} does not have any ontology".format(cls.KeyAttributeName))
+			
+			# First, having something workable
+			if isinstance(value,cls):
+				term = value
+			else:
+				term = cls(value)
+			
+			try:
+				isValid = True
+				for ont in ontlist:
+					parsed_ont = rfc3987.parse(ont, rule="URI")
+					
+					scheme = parsed_ont.get('scheme')
+					if scheme != 'http' and scheme != 'https':
+						isValid = False
+						yield ValidationError("Ontology {0} is not public available".format(ont))
 				
-				scheme = parsed_ont.get('scheme')
-				if scheme != 'http' and scheme != 'https':
-					isValid = False
-					yield ValidationError("Ontology {0} is not public available".format(ont))
-			
-			# Now, let's check against the list of ontologies!
-			if isValid and not term.isValid(validator,ontlist,value,schema):
-				yield ValidationError("Term {0} was not found in these ontologies: {1}".format(term.term,ontlist))
-		except SyntaxError:
-			t,v,tr = sys.exc_info()
-			import pprint
-			pprint.pprint(t)
-			pprint.pprint(v)
-			pprint.pprint(tr)
-			sys.exit(1)
-		#except:
-		#	t,v,tr = sys.exc_info()
-		#	import pprint
-		#	pprint.pprint(t)
-		#	pprint.pprint(v)
-		#	pprint.pprint(tr)
-		#	sys.exit(1)
-		except ValidationError as v:
-			yield v
-		except ValueError as ve:
-			yield ValidationError("Unable to parse ontology {0}: {1}".format(ontlist,str(ve)))
-		except urllib.error.HTTPError as he:
-			yield ValidationError("Unable to fetch ontology {0} [{1}]: {2}".format(ontlist,he.code,he.reason))
-		except urllib.error.URLError as ue:
-			yield ValidationError("Unable to fetch ontology {0}: {1}".format(ontlist,ue.reason))
-		except BaseException as be:
-			yield ValidationError("Unexpected error: {}".format(str(be)))
+				# Now, let's check against the list of ontologies!
+				if isValid and not term.isValid(validator,ontlist,value,schema):
+					yield ValidationError("Term {0} was not found in these ontologies: {1}".format(term.term,ontlist))
+			except SyntaxError:
+				t,v,tr = sys.exc_info()
+				import pprint
+				pprint.pprint(t)
+				pprint.pprint(v)
+				pprint.pprint(tr)
+				sys.exit(1)
+			#except:
+			#	t,v,tr = sys.exc_info()
+			#	import pprint
+			#	pprint.pprint(t)
+			#	pprint.pprint(v)
+			#	pprint.pprint(tr)
+			#	sys.exit(1)
+			except ValidationError as v:
+				yield v
+			except ValueError as ve:
+				yield ValidationError("Unable to parse ontology {0}: {1}".format(ontlist,str(ve)))
+			except urllib.error.HTTPError as he:
+				yield ValidationError("Unable to fetch ontology {0} [{1}]: {2}".format(ontlist,he.code,he.reason))
+			except urllib.error.URLError as ue:
+				yield ValidationError("Unable to fetch ontology {0}: {1}".format(ontlist,ue.reason))
+			except BaseException as be:
+				yield ValidationError("Unexpected error: {}".format(str(be)))
+
+	
+	@classmethod
+	def IsCorrectFormat(cls, value, schema = None):
+		"""
+		In empty context
+		return true
+		"""
+		if schema is None:
+			return True
+		else:
+			for val in cls.IsValidTerm(None,schema.get(cls.KeyAttributeName),value,schema):
+				if isinstance(val,ValidationError):
+					return False
+			return True

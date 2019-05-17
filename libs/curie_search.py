@@ -18,6 +18,9 @@ class CurieSearch(object):
 		'basic': None
 	}
 	
+	FormatName = 'curie'
+	KeyAttributeName = 'namespace'
+	
 	def __init__(self,curie):
 		if isinstance(curie,object):
 			self.curie = curie
@@ -26,7 +29,7 @@ class CurieSearch(object):
 	
 	def isValid(self,validator,nslist,origValue,schema):
 		found = False
-		matchType = str(schema.get('matchType','loose'))
+		matchType = str(schema.get('matchType','loose'))  if schema is not None  else 'canonical'
 		if matchType not in CurieSearch.VALID_MATCHES:
 			raise ValidationError("attribute 'matchType' is {0} but it must be one of the next values: {1}".format(matchType,CurieSearch.VALID_MATCHES.keys()))
 		
@@ -44,8 +47,6 @@ class CurieSearch(object):
 			if prefix:
 				if (len(prefix) > 0) and (matchType == 'loose'):
 					matchType = 'canonical'
-				else:
-					prefix = None
 		else:
 			prefix = None
 		
@@ -113,21 +114,45 @@ class CurieSearch(object):
 	
 	@classmethod
 	def IsValidCurie(cls,validator,namespace,value,schema):
-		# First, having something workable
-		try:
-			if isinstance(value,cls):
-				curieS = value
+		"""
+		This method is here to be registered with custom validators
+		"""
+		# We do the validation only when the format is defined
+		if (schema is None) or (schema.get("format") == cls.FormatName):
+			# Managing the different cases
+			if namespace is None:
+				nslist = []
+			elif isinstance(namespace,list):
+				nslist = namespace
 			else:
-				curieS = cls(value)
+				nslist = [ namespace ]
 			
-			nslist = namespace  if isinstance(namespace,list) else [ namespace ]
-			
-			# Now, let's check!
-			if not curieS.isValid(validator,nslist,value,schema):
-				yield ValidationError("CURIE {0} does not belong to one of the allowed schemes: {1}".format(value,nslist))
-		except ValidationError as v:
-			yield v
-		except ValueError as ve:
-			yield ValidationError("Unable to parse CURIE {0}: {1}".format(value,str(ve)))
-		except BaseException as be:
-			yield ValidationError("Unexpected error: {}".format(str(be)))
+			try:
+				# First, having something workable
+				if isinstance(value,cls):
+					curieS = value
+				else:
+					curieS = cls(value)
+				
+				# Now, let's check!
+				if not curieS.isValid(validator,nslist,value,schema):
+					yield ValidationError("Value '{0}' does not validate to any of the allowed schemes: {1}".format(value,nslist))
+			except ValidationError as v:
+				yield v
+			except ValueError as ve:
+				yield ValidationError("Unable to parse CURIE {0}: {1}".format(value,str(ve)))
+			except BaseException as be:
+				yield ValidationError("Unexpected error: {}".format(str(be)))
+	
+	@classmethod
+	def IsCorrectFormat(cls, value, schema = None):
+		"""
+		In empty context where the value is not a CURIE
+		return true
+		"""
+		if ':' in str(value):
+			for val in cls.IsValidCurie(None,schema.get(cls.KeyAttributeName) if schema else None,value,schema):
+				if isinstance(val,ValidationError):
+					print(val.message,file=sys.stderr)
+					return False
+		return True

@@ -89,10 +89,22 @@ def findFKs(jsonSchema,jsonSchemaURI,prefix=""):
 from libs.curie_search import CurieSearch
 from libs.ontology_term import OntologyTerm
 
+# This has been commented out, as we are following the format validation path
 CustomTypes = {
-	'curie': CurieSearch.IsCurie,
-	'term': OntologyTerm.IsTerm
+#	'curie': CurieSearch.IsCurie,
+#	'term': OntologyTerm.IsTerm
 }
+
+CustomFormats = [
+	CurieSearch,
+	OntologyTerm
+]
+
+CustomFormatCheckerInstance = JSV.FormatChecker()
+
+# Registering the custom formats, in order to use them
+for CustomFormat in CustomFormats:
+	CustomFormatCheckerInstance.checks(CustomFormat.FormatName)(CustomFormat.IsCorrectFormat)
 
 CustomValidators = {
 	'namespace': CurieSearch.IsValidCurie,
@@ -388,7 +400,7 @@ def jsonValidate(p_schemaHash,*args):
 							jsonSchema = p_schemaHash[jsonSchemaId]['schema']
 							validator = p_schemaHash[jsonSchemaId]['validator']
 							
-							valErrors = [ error  for error in validator(jsonSchema).iter_errors(jsonDoc) ]
+							valErrors = [ error  for error in validator(jsonSchema, format_checker = CustomFormatCheckerInstance).iter_errors(jsonDoc) ]
 							
 							if len(valErrors) > 0:
 								print("\t- ERRORS:\n"+"\n".join(map(lambda se: "\t\tPath: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),se.path)),se.message) , valErrors))+"\n")
