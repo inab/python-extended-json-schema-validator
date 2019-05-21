@@ -79,7 +79,7 @@ FROM metadata
 				cur.execute("""
 SELECT TRUE
 FROM metadata
-WHERE last_updated >= :lu
+WHERE DATETIME(last_updated) >= :lu
 """,{'lu': last_updated})
 				if cur.fetchone() is not None:
 					cur.execute("""
@@ -158,7 +158,6 @@ OR
 id = :query
 """,{'query': key})
 			res = cur.fetchone()
-			print(res,file=sys.stderr)
 			return res is not None
 	
 	def __getitem__(self,key):
