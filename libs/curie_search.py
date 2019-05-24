@@ -58,7 +58,7 @@ class CurieSearch(object):
 				valToVal = origValue
 				validatedCURIEs = list(filter(lambda curie: curie is not None,map(lambda namespace: cache.get(namespace),nslist)))
 				if not validatedCURIEs:
-					raise ValidationError('No namespace found in identifiers.org cache')
+					raise ValidationError('No namespace from {} was found in identifiers.org cache'.format(nslist))
 				
 				# Looking for a match
 				for curie in validatedCURIEs:
