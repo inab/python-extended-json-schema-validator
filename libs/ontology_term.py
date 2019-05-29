@@ -18,6 +18,8 @@ class OntologyTerm(object):
 		'label': 'label'
 	}
 	
+	VALID_SCHEMES = { 'http', 'https', 'ftp' }
+	
 	FormatName = 'term'
 	KeyAttributeName = 'ontology'
 	
@@ -140,7 +142,7 @@ class OntologyTerm(object):
 					parsed_ont = rfc3987.parse(ont, rule="URI")
 					
 					scheme = parsed_ont.get('scheme')
-					if scheme != 'http' and scheme != 'https':
+					if scheme not in cls.VALID_SCHEMES:
 						isValid = False
 						yield ValidationError("Ontology {0} is not public available".format(ont))
 				
