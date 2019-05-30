@@ -133,6 +133,13 @@ VALIDATOR_MAPPER = {
 	'http://json-schema.org/draft-07/hyper-schema#': ExtendedDraft7Validator
 }
 
+SCHEMA_KEY = '$schema'
+ALT_SCHEMA_KEYS = [
+	'@schema',
+	'_schema',
+	SCHEMA_KEY
+]
+
 def loadJSONSchemas(p_schemaHash,*args):
 	# Schema validation stats
 	numDirOK = 0
@@ -165,9 +172,9 @@ def loadJSONSchemas(p_schemaHash,*args):
 					
 					jsonSchema = json.load(sHandle)
 					
-					schemaValId = jsonSchema.get('$schema')
+					schemaValId = jsonSchema.get(SCHEMA_KEY)
 					if schemaValId is None:
-						print("\tIGNORE: {0} does not have the mandatory '$schema' attribute, so it cannot be validated".format(jsonSchemaFile))
+						print("\tIGNORE: {0} does not have the mandatory '{1}' attribute, so it cannot be validated".format(jsonSchemaFile,SCHEMA_KEY))
 						numFileIgnore += 1
 						continue
 					
@@ -392,8 +399,16 @@ def jsonValidate(p_schemaHash,*args):
 					print("* Validating {0}".format(jsonFile))
 					jsonDoc = json.load(jHandle)
 					
-					if ('fair_tracks' in jsonDoc) and ('_schema' in jsonDoc['fair_tracks']):
-						jsonSchemaId = jsonDoc['fair_tracks']['_schema']
+					# Getting the schema id to locate the proper schema to validate against
+					jsonRoot = jsonDoc['fair_tracks']  if 'fair_tracks' in jsonDoc  else jsonDoc
+					
+					jsonSchemaId = None
+					for altSchemaKey in ALT_SCHEMA_KEYS:
+						if altSchemaKey in jsonRoot:
+							jsonSchemaId = jsonRoot[altSchemaKey]
+							break
+					
+					if jsonSchemaId is not None:
 						if jsonSchemaId in p_schemaHash:
 							print("\t- Using {0} schema".format(jsonSchemaId))
 							
