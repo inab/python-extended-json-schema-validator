@@ -9,6 +9,8 @@ import json
 import jsonschema as JSV
 import uritools
 
+from collections import namedtuple
+
 # This is needed to assure open suports encoding parameter
 if sys.version_info[0] > 2:
 	ALLOWED_KEY_TYPES=(bytes,str)
@@ -83,6 +85,60 @@ def findFKs(jsonSchema,jsonSchemaURI,prefix=""):
 	
 	return FKs
 
+# Augmenting the supported types
+from libs.curie_search import CurieSearch
+from libs.ontology_term import OntologyTerm
+
+# This has been commented out, as we are following the format validation path
+CustomTypes = {
+#	'curie': CurieSearch.IsCurie,
+#	'term': OntologyTerm.IsTerm
+}
+
+CustomFormats = [
+	CurieSearch,
+	OntologyTerm
+]
+
+CustomFormatCheckerInstance = JSV.FormatChecker()
+
+# Registering the custom formats, in order to use them
+for CustomFormat in CustomFormats:
+	CustomFormatCheckerInstance.checks(CustomFormat.FormatName)(CustomFormat.IsCorrectFormat)
+
+CustomValidators = {
+	'namespace': CurieSearch.IsValidCurie,
+	'ontology': OntologyTerm.IsValidTerm
+}
+
+def extendValidator(validator):
+	extendedValidators = validator.VALIDATORS.copy()
+	extendedValidators.update(CustomValidators)
+	
+	extendedChecker = validator.TYPE_CHECKER.redefine_many(CustomTypes)
+	
+	return JSV.validators.extend(validator, validators=extendedValidators , type_checker=extendedChecker)
+	
+
+ExtendedDraft4Validator = extendValidator(JSV.validators.Draft4Validator)
+ExtendedDraft6Validator = extendValidator(JSV.validators.Draft6Validator)
+ExtendedDraft7Validator = extendValidator(JSV.validators.Draft7Validator)
+
+VALIDATOR_MAPPER = {
+	'http://json-schema.org/draft-04/schema#': ExtendedDraft4Validator,
+	'http://json-schema.org/draft-04/hyper-schema#': ExtendedDraft4Validator,
+	'http://json-schema.org/draft-06/schema#': ExtendedDraft6Validator,
+	'http://json-schema.org/draft-06/hyper-schema#': ExtendedDraft6Validator,
+	'http://json-schema.org/draft-07/schema#': ExtendedDraft7Validator,
+	'http://json-schema.org/draft-07/hyper-schema#': ExtendedDraft7Validator
+}
+
+SCHEMA_KEY = '$schema'
+ALT_SCHEMA_KEYS = [
+	'@schema',
+	'_schema',
+	SCHEMA_KEY
+]
 
 def loadJSONSchemas(p_schemaHash,*args):
 	# Schema validation stats
@@ -116,7 +172,19 @@ def loadJSONSchemas(p_schemaHash,*args):
 					
 					jsonSchema = json.load(sHandle)
 					
-					valErrors = [ error  for error in JSV.validators.Draft4Validator(JSV.validators.Draft4Validator.META_SCHEMA).iter_errors(jsonSchema) ]
+					schemaValId = jsonSchema.get(SCHEMA_KEY)
+					if schemaValId is None:
+						print("\tIGNORE: {0} does not have the mandatory '{1}' attribute, so it cannot be validated".format(jsonSchemaFile,SCHEMA_KEY))
+						numFileIgnore += 1
+						continue
+					
+					validator = VALIDATOR_MAPPER.get(schemaValId)
+					if validator is None:
+						print("\tIGNORE/FIXME: The JSON Schema id {0} is not being acknowledged by this validator".format(schemaValId))
+						numFileIgnore += 1
+						continue
+					
+					valErrors = [ error  for error in validator(validator.META_SCHEMA).iter_errors(jsonSchema) ]
 					if len(valErrors) > 0:
 						print("\t- ERRORS:\n"+"\n".join(map(lambda se: "\t\tPath: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),se.path)),se.message) , valErrors))+"\n")
 						numFileFail += 1
@@ -125,10 +193,12 @@ def loadJSONSchemas(p_schemaHash,*args):
 						# my $jsonSchemaP = $v->schema($jsonSchema)->schema;
 						# This step is done, so we fetch a complete schema
 						# $jsonSchema = $jsonSchemaP->data;
-						if 'id' in jsonSchema:
-							jsonSchemaURI = jsonSchema['id']
+						idKey = '$id'  if '$id' in jsonSchema else 'id'
+						
+						if idKey in jsonSchema:
+							jsonSchemaURI = jsonSchema[idKey]
 							if jsonSchemaURI in p_schemaHash:
-								print("\tERROR: validated, but schema in {0} and schema in {1} have the same id".format(jsonSchemaFile,p_schemaHash[jsonSchemaURI][1]),file=sys.stderr)
+								print("\tERROR: validated, but schema in {0} and schema in {1} have the same id".format(jsonSchemaFile,p_schemaHash[jsonSchemaURI]['file']),file=sys.stderr)
 								numFileFail += 1
 							else:
 								print("\t- Validated {0}".format(jsonSchemaURI))
@@ -152,7 +222,13 @@ def loadJSONSchemas(p_schemaHash,*args):
 								
 								#print(FKs,file=sys.stderr)
 								
-								p_schemaHash[jsonSchemaURI] = (jsonSchema,jsonSchemaFile,p_PK,FKs)
+								p_schemaHash[jsonSchemaURI] = {
+									'schema': jsonSchema,
+									'validator': validator,
+									'file': jsonSchemaFile,
+									'pk': p_PK,
+									'fk': FKs
+								}
 								numFileOK += 1
 						else:
 							print("\tIGNORE: validated, but schema in {0} has no id attribute".format(jsonSchemaFile),file=sys.stderr)
@@ -169,8 +245,8 @@ def loadJSONSchemas(p_schemaHash,*args):
 	numSchemaConsistent = 0
 	numSchemaInconsistent = 0
 	for jsonSchemaURI , p_schema in p_schemaHash.items():
-		jsonSchemaFile = p_schema[1]
-		p_FKs = p_schema[3]
+		jsonSchemaFile = p_schema['file']
+		p_FKs = p_schema['fk']
 		print("* Checking {0}".format(jsonSchemaFile))
 		
 		isValid = True
@@ -323,14 +399,23 @@ def jsonValidate(p_schemaHash,*args):
 					print("* Validating {0}".format(jsonFile))
 					jsonDoc = json.load(jHandle)
 					
-					if '_schema' in jsonDoc:
-						jsonSchemaId = jsonDoc['_schema']
+					# Getting the schema id to locate the proper schema to validate against
+					jsonRoot = jsonDoc['fair_tracks']  if 'fair_tracks' in jsonDoc  else jsonDoc
+					
+					jsonSchemaId = None
+					for altSchemaKey in ALT_SCHEMA_KEYS:
+						if altSchemaKey in jsonRoot:
+							jsonSchemaId = jsonRoot[altSchemaKey]
+							break
+					
+					if jsonSchemaId is not None:
 						if jsonSchemaId in p_schemaHash:
 							print("\t- Using {0} schema".format(jsonSchemaId))
 							
-							jsonSchema = p_schemaHash[jsonSchemaId][0]
+							jsonSchema = p_schemaHash[jsonSchemaId]['schema']
+							validator = p_schemaHash[jsonSchemaId]['validator']
 							
-							valErrors = [ error  for error in JSV.validators.Draft4Validator(jsonSchema).iter_errors(jsonDoc) ]
+							valErrors = [ error  for error in validator(jsonSchema, format_checker = CustomFormatCheckerInstance).iter_errors(jsonDoc) ]
 							
 							if len(valErrors) > 0:
 								print("\t- ERRORS:\n"+"\n".join(map(lambda se: "\t\tPath: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),se.path)),se.message) , valErrors))+"\n")
@@ -341,7 +426,7 @@ def jsonValidate(p_schemaHash,*args):
 							else:
 								# Does the schema contain a PK declaration?
 								isValid = True
-								p_PK_def = p_schemaHash[jsonSchemaId][2]
+								p_PK_def = p_schemaHash[jsonSchemaId]['pk']
 								if p_PK_def is not None:
 									p_PK = None
 									if jsonSchemaId in PKvals:
@@ -404,13 +489,13 @@ def jsonValidate(p_schemaHash,*args):
 				print("* Checking FK on {0}".format(jsonFile))
 				jsonDoc = json.load(jHandle)
 				
-				if '_schema' in jsonDoc:
-					jsonSchemaId = jsonDoc['_schema']
+				if ('fair_tracks' in jsonDoc) and ('_schema' in jsonDoc['fair_tracks']):
+					jsonSchemaId = jsonDoc['fair_tracks']['_schema']
 					
 					if jsonSchemaId in p_schemaHash:
 						print("\t- Using {0} schema".format(jsonSchemaId))
 						
-						p_FKs = p_schemaHash[jsonSchemaId][3]
+						p_FKs = p_schemaHash[jsonSchemaId]['fk']
 						
 						isValid = True
 						#print(p_schemaHash[jsonSchemaId])
