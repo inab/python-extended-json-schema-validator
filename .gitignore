@@ -1,2 +1,6 @@
-.py*env
-py*env
+.py*env/
+py*env/
+__pycache__
+build/
+dist/
+*.egg-info/
