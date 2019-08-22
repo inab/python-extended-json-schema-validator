@@ -167,7 +167,7 @@ class FairGTracksValidator(object):
 					numFileIgnore += 1
 					continue
 				
-				jsonSchemaFile = schemaObj.get('file','(inline)')
+				jsonSchemaFile = schemaObj.setdefault('file','(inline)')
 			elif os.path.isdir(jsonSchemaPossible):
 				jsonSchemaDir = jsonSchemaPossible
 				# It's a possible JSON Schema directory, not a JSON Schema file
@@ -476,7 +476,7 @@ class FairGTracksValidator(object):
 					numFileIgnore += 1
 					continue
 				
-				jsonFile = jsonObj.get('file','(inline)')
+				jsonFile = jsonObj.setdefault('file','(inline)')
 			elif os.path.isdir(jsonPossible):
 				jsonDir = jsonPossible
 				# It's a possible JSON directory, not a JSON file
