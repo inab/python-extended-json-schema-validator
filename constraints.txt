@@ -3,12 +3,12 @@ dateparser==0.7.1
 idna==2.8
 jsonpointer==2.0
 jsonschema==3.0.2
-Owlready2==0.19
+Owlready2==0.20
 pyrsistent==0.15.4
 python-dateutil==2.8.0
 pytz==2019.2
 pyxdg==0.26
-regex==2019.6.8
+regex==2019.8.19
 rfc3987==1.3.8
 six==1.12.0
 strict-rfc3339==0.7
