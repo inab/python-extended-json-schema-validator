@@ -40,7 +40,7 @@ if len(sys.argv) > 1:
 	jsonSchema = None
 	
 	fgv = FairGTracksValidator()
-	numSchemas = fgv.loadJSONSchemas(jsonSchemaDir)
+	numSchemas = fgv.loadJSONSchemas(jsonSchemaDir,verbose=True)
 	
 	if len(sys.argv) > 2:
 		if numSchemas == 0:
@@ -48,7 +48,7 @@ if len(sys.argv) > 1:
 			sys.exit(1)
 		
 		args = tuple(sys.argv[2:])
-		fgv.jsonValidate(*args)
+		fgv.jsonValidate(*args,verbose=True)
 else:
 	print("Usage: {0} {{JSON schema}} {{JSON file}}*".format(sys.argv[0]),file=sys.stderr)
 	sys.exit(1)
