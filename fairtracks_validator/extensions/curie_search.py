@@ -9,7 +9,7 @@ from jsonschema.exceptions import FormatError, ValidationError
 from .curie_cache import CurieCache, Curie
 import re
 import xdg
-import os
+import os, sys
 
 class CurieSearch(object):
 	VALID_MATCHES = {
