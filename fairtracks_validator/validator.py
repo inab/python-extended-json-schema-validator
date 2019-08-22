@@ -456,7 +456,7 @@ class FairGTracksValidator(object):
 		for jsonPossible in jsonPossibles:
 			iJsonPossible += 1
 			jsonObj = None
-			if isinstance(jsonPossible,tuple):
+			if isinstance(jsonPossible,dict):
 				jsonObj = jsonPossible
 				errors = jsonObj.get('errors')
 				if errors is None:
