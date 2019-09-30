@@ -51,7 +51,7 @@ class OntologyTerm(object):
 				#cachePath = tempfile.mkdtemp(prefix="term", suffix="cache")
 				#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
 				cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
-				os.makedirs(cachePath)
+				os.makedirs(cachePath, exist_ok=True)
 			
 			# Activate this only if you want to save a copy of the ontologies
 			#ontologiesPath = os.path.join(cachePath,'ontologies')

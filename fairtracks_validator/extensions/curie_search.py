@@ -118,7 +118,7 @@ class CurieSearch(object):
 				#cachePath = tempfile.mkdtemp(prefix="curie", suffix="cache")
 				#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
 				cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
-				os.makedirs(cachePath)
+				os.makedirs(cachePath, exist_ok=True)
 			
 			setattr(cls,'CurieCache',CurieCache(filename=os.path.join(cachePath,'CURIE_cache.sqlite3')))
 		
