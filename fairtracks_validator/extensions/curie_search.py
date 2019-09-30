@@ -115,8 +115,10 @@ class CurieSearch(object):
 				# The temporary directory should be
 				# removed when the application using this
 				# class finishes
-				cachePath = tempfile.mkdtemp(prefix="curie", suffix="cache")
-				atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
+				#cachePath = tempfile.mkdtemp(prefix="curie", suffix="cache")
+				#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
+				cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
+				os.makedirs(cachePath)
 			
 			setattr(cls,'CurieCache',CurieCache(filename=os.path.join(cachePath,'CURIE_cache.sqlite3')))
 		

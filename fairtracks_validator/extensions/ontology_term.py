@@ -48,8 +48,10 @@ class OntologyTerm(object):
 				# The temporary directory should be
 				# removed when the application using this
 				# class finishes
-				cachePath = tempfile.mkdtemp(prefix="term", suffix="cache")
-				atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
+				#cachePath = tempfile.mkdtemp(prefix="term", suffix="cache")
+				#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
+				cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
+				os.makedirs(cachePath)
 			
 			# Activate this only if you want to save a copy of the ontologies
 			#ontologiesPath = os.path.join(cachePath,'ontologies')
