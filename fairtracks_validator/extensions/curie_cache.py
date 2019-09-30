@@ -43,8 +43,8 @@ CREATE TABLE metadata (
 				# Prefixes table
 				cur.execute("""
 CREATE TABLE namespaces (
-	id VARCHAR(32) NOT NULL,
-	namespace VARCHAR(64) NOT NULL,
+	id VARCHAR(32) NOT NULL COLLATE NOCASE,
+	namespace VARCHAR(64) NOT NULL COLLATE NOCASE,
 	name VARCHAR(64) NOT NULL,
 	pattern VARCHAR(4096) NOT NULL,
 	PRIMARY KEY (id)
