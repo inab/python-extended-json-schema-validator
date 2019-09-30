@@ -177,7 +177,7 @@ class CurieSearch(object):
 		In empty context where the value is not a CURIE
 		return true
 		"""
-		if ':' in str(value):
+		if schema and (':' in str(value)):
 			for val in cls.IsValidCurie(None,schema.get(cls.KeyAttributeName) if schema else None,value,schema):
 				if isinstance(val,ValidationError):
 					print(val.message,file=sys.stderr)
