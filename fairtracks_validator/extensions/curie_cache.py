@@ -77,7 +77,7 @@ FROM metadata
 				last_updated = dateparser.parse(root.getAttribute('data-version'))
 				
 				cur.execute("""
-SELECT TRUE
+SELECT last_updated
 FROM metadata
 WHERE DATETIME(last_updated) >= :lu
 """,{'lu': last_updated})

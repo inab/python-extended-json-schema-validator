@@ -169,6 +169,8 @@ class CurieSearch(object):
 			except ValueError as ve:
 				yield ValidationError("Unable to parse CURIE {0}: {1}".format(value,str(ve)))
 			except BaseException as be:
+				import traceback
+				traceback.print_exc()
 				yield ValidationError("Unexpected error: {}".format(str(be)))
 	
 	@classmethod
