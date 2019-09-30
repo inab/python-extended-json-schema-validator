@@ -56,7 +56,7 @@ class CurieSearch(object):
 			prefix = None
 		
 		if nslist:
-			l_nslist = list(map(lambda x: None if x is None else x.lower() if isinstance(x,str) else str(x).lower(), nslist)
+			l_nslist = list(map(lambda x: None if x is None else x.lower() if isinstance(x,str) else str(x).lower(), nslist))
 		else:
 			l_nslist = nslist
 		
