@@ -448,6 +448,8 @@ class FairGTracksValidator(object):
 		numFilePass2OK = 0
 		numFilePass2Fail = 0
 		
+		report = []
+		
 		# First pass, check against JSON schema, as well as primary keys unicity
 		if verbose:
 			print("\nPASS 1: Schema validation and PK checks")
@@ -463,6 +465,13 @@ class FairGTracksValidator(object):
 					if verbose:
 						print("\tIGNORE: cached JSON does not have the mandatory 'errors' attribute, so it cannot be processed")
 					numFileIgnore += 1
+					
+					# For the report
+					jsonObj.setDefault('errors',[{'reason': 'ignored', 'description': 'Programming error: uninitialized error structures'}])
+					report.append(jsonObj)
+					
+					# Masking it for the pass 2 loop
+					jsonPossibles[iJsonPossible] = None
 					continue
 				
 				jsonDoc = jsonObj.get('json')
@@ -470,10 +479,16 @@ class FairGTracksValidator(object):
 					if verbose:
 						print("\tIGNORE: cached JSON does not have the mandatory 'json' attribute, so it cannot be processed")
 					errors.append({
-						'reason': 'unexpected',
-						'description': "The cached json is missing"
+						'reason': 'ignored',
+						'description': "Programming error: the cached json is missing"
 					})
 					numFileIgnore += 1
+					
+					# For the report
+					report.append(jsonObj)
+					
+					# Masking it for the pass 2 loop
+					jsonPossibles[iJsonPossible] = None
 					continue
 				
 				jsonFile = jsonObj.setdefault('file','(inline)')
@@ -490,13 +505,15 @@ class FairGTracksValidator(object):
 						if os.path.isdir(newJsonFile) or '.json' in relJsonFile:
 							jsonPossibles.append(newJsonFile)
 					
-					# Masking it for the pass 2 loop
-					jsonPossibles[iJsonPossible] = None
 					numDirOK += 1
 				except IOError as ioe:
 					if verbose:
-						print("FATAL ERROR: Unable to open JSON directory {0}. Reason: {1}".format(jsonDir,ioe.strerror),file=sys.stderr)
+						print("FATAL ERROR: Unable to open/process JSON directory {0}. Reason: {1}".format(jsonDir,ioe.strerror),file=sys.stderr)
+					report.append({'file': jsonDir,'errors': [{'reason': 'fatal', 'description': 'Unable to open/process JSON directory'}]})
 					numDirFail += 1
+				finally:
+					# Masking it for the pass 2 loop
+					jsonPossibles[iJsonPossible] = None
 				
 				continue
 			else:
@@ -511,6 +528,7 @@ class FairGTracksValidator(object):
 					if verbose:
 						print("\t- ERROR: Unable to open file {0}. Reason: {1}".format(jsonFile,ioe.strerror),file=sys.stderr)
 					# Masking it for the next loop
+					report.append({'file': jsonFile,'errors': [{'reason': 'fatal', 'description': 'Unable to open/parse JSON file'}]})
 					jsonPossibles[iJsonPossible] = None
 					numFilePass1Fail += 1
 					continue
@@ -554,6 +572,7 @@ class FairGTracksValidator(object):
 							})
 						
 						# Masking it for the next loop
+						report.append(jsonPossibles[iJsonPossible])
 						jsonPossibles[iJsonPossible] = None
 						numFilePass1Fail += 1
 					else:
@@ -586,6 +605,7 @@ class FairGTracksValidator(object):
 									p_PK[pkString] = jsonFile
 							else:
 								# Masking it for the next loop if there was an error
+								report.append(jsonPossibles[iJsonPossible])
 								jsonPossibles[iJsonPossible] = None
 								numFilePass1Fail += 1
 								
@@ -602,6 +622,7 @@ class FairGTracksValidator(object):
 						'description': "Schema with URI {0} was not loaded".format(jsonSchemaId)
 					})
 					# Masking it for the next loop
+					report.append(jsonPossibles[iJsonPossible])
 					jsonPossibles[iJsonPossible] = None
 					numFilePass1Ignore += 1
 			else:
@@ -612,6 +633,7 @@ class FairGTracksValidator(object):
 					'description': "No hint to identify the correct JSON Schema to be used to validate"
 				})
 				# Masking it for the next loop
+				report.append(jsonPossibles[iJsonPossible])
 				jsonPossibles[iJsonPossible] = None
 				numFilePass1Ignore += 1
 		
@@ -627,6 +649,9 @@ class FairGTracksValidator(object):
 		for jsonObj in jsonPossibles:
 			if jsonObj is None:
 				continue
+			
+			# Adding this survivor to the report
+			report.append(jsonObj)
 			
 			if verbose:
 				print("* Checking FK on {0}".format(jsonFile))
@@ -713,3 +738,5 @@ class FairGTracksValidator(object):
 		
 		if verbose:
 			print("\nVALIDATION STATS:\n\t- directories ({0} OK, {1} failed)\n\t- PASS 1 ({2} OK, {3} ignored, {4} error)\n\t- PASS 2 ({5} OK, {6} error)".format(numDirOK,numDirFail,numFilePass1OK,numFilePass1Ignore,numFilePass1Fail,numFilePass2OK,numFilePass2Fail))
+		
+		return report
