@@ -10,6 +10,9 @@ import xdg.BaseDirectory
 import os
 import urllib
 import sys
+import tempfile
+import shutil
+import atexit
 
 class OntologyTerm(object):
 	VALID_MATCHES = {
@@ -29,7 +32,24 @@ class OntologyTerm(object):
 	@classmethod
 	def GetWorld(cls):
 		if not hasattr(cls,'TermWorld'):
-			cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
+			doTempDir = False
+			try:
+				cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
+				# Is the directory writable?
+				if not os.access(cachePath,os.W_OK):
+					doTempDir = True
+			except OSError as e:
+				# As it was not possible to create the
+				# directory at the cache path, go to the
+				# temporary directory
+				doTempDir = True
+			
+			if doTempDir:
+				# The temporary directory should be
+				# removed when the application using this
+				# class finishes
+				cachePath = tempfile.mkdtemp(prefix="term", suffix="cache")
+				atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
 			
 			# Activate this only if you want to save a copy of the ontologies
 			#ontologiesPath = os.path.join(cachePath,'ontologies')

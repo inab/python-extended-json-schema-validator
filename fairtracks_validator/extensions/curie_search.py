@@ -10,6 +10,9 @@ from .curie_cache import CurieCache, Curie
 import re
 import xdg
 import os, sys
+import tempfile
+import shutil
+import atexit
 
 class CurieSearch(object):
 	VALID_MATCHES = {
@@ -89,7 +92,24 @@ class CurieSearch(object):
 	@classmethod
 	def GetCurieCache(cls):
 		if not hasattr(cls,'CurieCache'):
-			cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
+			doTempDir = False
+			try:
+				cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
+				# Is the directory writable?
+				if not os.access(cachePath,os.W_OK):
+					doTempDir = True
+			except OSError as e:
+				# As it was not possible to create the
+				# directory at the cache path, create a
+				# temporary directory
+				doTempDir = True
+			
+			if doTempDir:
+				# The temporary directory should be
+				# removed when the application using this
+				# class finishes
+				cachePath = tempfile.mkdtemp(prefix="curie", suffix="cache")
+				atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
 			
 			setattr(cls,'CurieCache',CurieCache(filename=os.path.join(cachePath,'CURIE_cache.sqlite3')))
 		
