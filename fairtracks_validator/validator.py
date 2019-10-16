@@ -36,15 +36,38 @@ else:
 # Augmenting the supported types
 from fairtracks_validator.extensions.curie_search import CurieSearch
 from fairtracks_validator.extensions.ontology_term import OntologyTerm
+from fairtracks_validator.extensions.unique_check import UniqueKey
 
-
-def extendValidator(validator,CustomTypes,CustomValidators):
+# This method returns both the extended Validator instance and the dynamic validators
+# to be reset on command
+def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidators):
 	extendedValidators = validator.VALIDATORS.copy()
-	extendedValidators.update(CustomValidators)
+	customValidatorsInstances = []
 	
-	extendedChecker = validator.TYPE_CHECKER.redefine_many(CustomTypes)
+	# Validators which must be instantiated
+	if None in inputCustomValidators:
+		instancedCustomValidators = inputCustomValidators.copy()
+		
+		# Removing the special entry
+		del instancedCustomValidators[None]
+		
+		# Now, populating
+		for dynamicValidatorClass in inputCustomValidators[None]:
+			dynamicValidator = dynamicValidatorClass(schemaURI)
+			customValidatorsInstances.append(dynamicValidator)
+			
+			# The method must exist, and accept the parameters
+			# declared on next documentation
+			# https://python-jsonschema.readthedocs.io/en/stable/creating/
+			instancedCustomValidators[dynamicValidator.KeyAttributeName] = dynamicValidator.validate
+	else:
+		instancedCustomValidators = inputCustomValidators
 	
-	return JSV.validators.extend(validator, validators=extendedValidators , type_checker=extendedChecker)
+	extendedValidators.update(instancedCustomValidators)
+	
+	extendedChecker = validator.TYPE_CHECKER.redefine_many(inputCustomTypes)
+	
+	return JSV.validators.extend(validator, validators=extendedValidators , type_checker=extendedChecker) , customValidatorsInstances
 
 class FairGTracksValidator(object):
 	# This has been commented out, as we are following the format validation path
@@ -59,13 +82,16 @@ class FairGTracksValidator(object):
 	]
 	
 	CustomValidators = {
-		'namespace': CurieSearch.IsValidCurie,
-		'ontology': OntologyTerm.IsValidTerm
+		CurieSearch.KeyAttributeName: CurieSearch.IsValidCurie,
+		OntologyTerm.KeyAttributeName: OntologyTerm.IsValidTerm,
+		None: [
+			UniqueKey
+		]
 	}
 	
-	ExtendedDraft4Validator = extendValidator(JSV.validators.Draft4Validator,CustomTypes,CustomValidators)
-	ExtendedDraft6Validator = extendValidator(JSV.validators.Draft6Validator,CustomTypes,CustomValidators)
-	ExtendedDraft7Validator = extendValidator(JSV.validators.Draft7Validator,CustomTypes,CustomValidators)
+	ExtendedDraft4Validator = lambda schemaURI: extendValidator(schemaURI, JSV.validators.Draft4Validator, FairGTracksValidator.CustomTypes, FairGTracksValidator.CustomValidators)
+	ExtendedDraft6Validator = lambda schemaURI: extendValidator(schemaURI, JSV.validators.Draft6Validator, FairGTracksValidator.CustomTypes, FairGTracksValidator.CustomValidators)
+	ExtendedDraft7Validator = lambda schemaURI: extendValidator(schemaURI, JSV.validators.Draft7Validator, FairGTracksValidator.CustomTypes, FairGTracksValidator.CustomValidators)
 	
 	VALIDATOR_MAPPER = {
 		'http://json-schema.org/draft-04/schema#': ExtendedDraft4Validator,
@@ -217,8 +243,8 @@ class FairGTracksValidator(object):
 				numFileIgnore += 1
 				continue
 			
-			validator = self.VALIDATOR_MAPPER.get(schemaValId)
-			if validator is None:
+			validator_lambda = self.VALIDATOR_MAPPER.get(schemaValId)
+			if validator_lambda is None:
 				if verbose:
 					print("\tIGNORE/FIXME: The JSON Schema id {0} is not being acknowledged by this validator".format(schemaValId))
 				errors.append({
@@ -228,6 +254,12 @@ class FairGTracksValidator(object):
 				numFileIgnore += 1
 				continue
 			
+			# Getting the JSON Schema URI, needed by this
+			idKey = '$id'  if '$id' in jsonSchema else 'id'
+			jsonSchemaURI = jsonSchema.get(idKey)
+			
+			validator , customFormatInstances = validator_lambda(jsonSchemaURI)
+			schemaObj['customFormatInstances'] = customFormatInstances
 			schemaObj['validator'] = validator
 			
 			valErrors = [ valError  for valError in validator(validator.META_SCHEMA).iter_errors(jsonSchema) ]
@@ -240,61 +272,58 @@ class FairGTracksValidator(object):
 						'description': "Path: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),valError.path)),valError.message)
 					})
 				numFileFail += 1
-			else:
+			elif jsonSchemaURI is not None:
 				# Getting the JSON Pointer object instance of the augmented schema
 				# my $jsonSchemaP = $v->schema($jsonSchema)->schema;
 				# This step is done, so we fetch a complete schema
 				# $jsonSchema = $jsonSchemaP->data;
-				idKey = '$id'  if '$id' in jsonSchema else 'id'
 				
-				if idKey in jsonSchema:
-					jsonSchemaURI = jsonSchema[idKey]
-					if jsonSchemaURI in p_schemaHash:
-						if verbose:
-							print("\tERROR: validated, but schema in {0} and schema in {1} have the same id".format(jsonSchemaFile,p_schemaHash[jsonSchemaURI]['file']),file=sys.stderr)
-						errors.append({
-							'reason': 'dup_id',
-							'description': "JSON Schema validated, but schema in {0} and schema in {1} have the same id".format(jsonSchemaFile,p_schemaHash[jsonSchemaURI]['file'])
-						})
-						numFileFail += 1
-					else:
-						if verbose:
-							print("\t- Validated {0}".format(jsonSchemaURI))
-						
-						# Curating the primary key
-						p_PK = None
-						if 'primary_key' in jsonSchema:
-							p_PK = jsonSchema['primary_key']
-							if isinstance(p_PK,(list,tuple)):
-								for key in p_PK:
-									#if type(key) not in ALLOWED_ATOMIC_VALUE_TYPES:
-									if type(key) not in ALLOWED_KEY_TYPES:
-										if verbose:
-											print("\tWARNING: primary key in {0} is not composed by strings defining its attributes. Ignoring it".format(jsonSchemaFile),file=sys.stderr)
-										p_PK = None
-										break
-							else:
-								p_PK = None
-						
-						schemaObj['pk'] = p_PK
-						
-						# Gather foreign keys
-						FKs = self.FindFKs(jsonSchema,jsonSchemaURI)
-						
-						schemaObj['fk'] = FKs
-						
-						#print(FKs,file=sys.stderr)
-						
-						p_schemaHash[jsonSchemaURI] = schemaObj
-						numFileOK += 1
+				if jsonSchemaURI in p_schemaHash:
+					if verbose:
+						print("\tERROR: validated, but schema in {0} and schema in {1} have the same id".format(jsonSchemaFile,p_schemaHash[jsonSchemaURI]['file']),file=sys.stderr)
+					errors.append({
+						'reason': 'dup_id',
+						'description': "JSON Schema validated, but schema in {0} and schema in {1} have the same id".format(jsonSchemaFile,p_schemaHash[jsonSchemaURI]['file'])
+					})
+					numFileFail += 1
 				else:
 					if verbose:
-						print("\tIGNORE: validated, but schema in {0} has no id attribute".format(jsonSchemaFile),file=sys.stderr)
-					errors.append({
-						'reason': 'no_id',
-						'description': "JSON Schema attributes '$id' (Draft06 onward) and 'id' (Draft04) are missing"
-					})
-					numFileIgnore += 1
+						print("\t- Validated {0}".format(jsonSchemaURI))
+					
+					# Curating the primary key
+					p_PK = None
+					if 'primary_key' in jsonSchema:
+						p_PK = jsonSchema['primary_key']
+						if isinstance(p_PK,(list,tuple)):
+							for key in p_PK:
+								#if type(key) not in ALLOWED_ATOMIC_VALUE_TYPES:
+								if type(key) not in ALLOWED_KEY_TYPES:
+									if verbose:
+										print("\tWARNING: primary key in {0} is not composed by strings defining its attributes. Ignoring it".format(jsonSchemaFile),file=sys.stderr)
+									p_PK = None
+									break
+						else:
+							p_PK = None
+					
+					schemaObj['pk'] = p_PK
+					
+					# Gather foreign keys
+					FKs = self.FindFKs(jsonSchema,jsonSchemaURI)
+					
+					schemaObj['fk'] = FKs
+					
+					#print(FKs,file=sys.stderr)
+					
+					p_schemaHash[jsonSchemaURI] = schemaObj
+					numFileOK += 1
+			else:
+				if verbose:
+					print("\tIGNORE: validated, but schema in {0} has no id attribute".format(jsonSchemaFile),file=sys.stderr)
+				errors.append({
+					'reason': 'no_id',
+					'description': "JSON Schema attributes '$id' (Draft06 onward) and 'id' (Draft04) are missing"
+				})
+				numFileIgnore += 1
 		
 		if verbose:
 			print("\nSCHEMA VALIDATION STATS: loaded {0} schemas from {1} directories, ignored {2} schemas, failed {3} schemas and {4} directories".format(numFileOK,numDirOK,numFileIgnore,numFileFail,numDirFail))
@@ -432,7 +461,11 @@ class FairGTracksValidator(object):
 		
 		return tuple(map(lambda pkString: json.dumps(pkString, sort_keys=True, separators=(',',':')) , pkStrings))
 
-
+	
+	def _resetDynamicValidators(self,dynValList):
+		for dynVal in dynValList:
+			dynVal.cleanup()
+	
 	def jsonValidate(self,*args,verbose=None):
 		p_schemaHash = self.schemaHash
 		
@@ -449,6 +482,8 @@ class FairGTracksValidator(object):
 		numFilePass2Fail = 0
 		
 		report = []
+		dynSchemaSet = set()
+		dynSchemaValList = []
 		
 		# First pass, check against JSON schema, as well as primary keys unicity
 		if verbose:
@@ -557,8 +592,20 @@ class FairGTracksValidator(object):
 					if verbose:
 						print("\t- Using {0} schema".format(jsonSchemaId))
 					
-					jsonSchema = p_schemaHash[jsonSchemaId]['schema']
-					validator = p_schemaHash[jsonSchemaId]['validator']
+					schemaObj = p_schemaHash[jsonSchemaId]
+					
+					# Registering the dynamic validators to be cleaned up
+					# when the validator finishes the session
+					if jsonSchemaId not in dynSchemaSet:
+						dynSchemaSet.add(jsonSchemaId)
+						localDynSchemaVal = schemaObj['customFormatInstances']
+						if localDynSchemaVal:
+							# We reset them, in case they were dirty
+							self._resetDynamicValidators(localDynSchemaVal)
+							dynSchemaValList.extend(localDynSchemaVal)
+					
+					jsonSchema = schemaObj['schema']
+					validator = schemaObj['validator']
 					
 					valErrors = [ error  for error in validator(jsonSchema, format_checker = self.CustomFormatCheckerInstance).iter_errors(jsonDoc) ]
 					
@@ -738,5 +785,9 @@ class FairGTracksValidator(object):
 		
 		if verbose:
 			print("\nVALIDATION STATS:\n\t- directories ({0} OK, {1} failed)\n\t- PASS 1 ({2} OK, {3} ignored, {4} error)\n\t- PASS 2 ({5} OK, {6} error)".format(numDirOK,numDirFail,numFilePass1OK,numFilePass1Ignore,numFilePass1Fail,numFilePass2OK,numFilePass2Fail))
+		
+		# Reset the dynamic validators
+		if dynSchemaValList:
+			self._resetDynamicValidators(dynSchemaValList)
 		
 		return report
