@@ -8,6 +8,7 @@ import re
 import json
 import jsonschema as JSV
 import uritools
+import hashlib
 
 from collections import namedtuple
 
@@ -193,6 +194,8 @@ class FairGTracksValidator(object):
 					numFileIgnore += 1
 					continue
 				
+				schemaObj['schema_hash'] = self.GetNormalizedJSONHash(jsonSchema)
+				
 				jsonSchemaFile = schemaObj.setdefault('file','(inline)')
 			elif os.path.isdir(jsonSchemaPossible):
 				jsonSchemaDir = jsonSchemaPossible
@@ -228,6 +231,7 @@ class FairGTracksValidator(object):
 					errors = []
 					schemaObj = {
 						'schema': jsonSchema,
+						'schema_hash': self.GetNormalizedJSONHash(jsonSchema),
 						'file': jsonSchemaFile,
 						'errors': errors
 					}
@@ -466,6 +470,13 @@ class FairGTracksValidator(object):
 		for dynVal in dynValList:
 			dynVal.cleanup()
 	
+	@classmethod
+	def GetNormalizedJSONHash(cls,json_data):
+		# First, we serialize it in a reproducible way
+		json_canon = json.dumps(json_data,sort_keys=True,indent=None,separators=(',',':'))
+		
+		return hashlib.sha1(json_canon.encode('utf-8')).hexdigest()
+	
 	def jsonValidate(self,*args,verbose=None):
 		p_schemaHash = self.schemaHash
 		
@@ -606,6 +617,8 @@ class FairGTracksValidator(object):
 					
 					jsonSchema = schemaObj['schema']
 					validator = schemaObj['validator']
+					jsonObj['schema_hash'] = schemaObj['schema_hash']
+					jsonObj['schema_id'] = jsonSchemaId
 					
 					valErrors = [ error  for error in validator(jsonSchema, format_checker = self.CustomFormatCheckerInstance).iter_errors(jsonDoc) ]
 					
