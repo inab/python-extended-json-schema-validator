@@ -12,5 +12,6 @@ The program can be run using next command line, activating previously the instal
 source .py3env/bin/activate
 python fairGTrackJsonValidate.py ../../json-schemas ../../prototype-data/cameo_prototype_data_fixed
 ```
+[![asciicast](https://asciinema.org/a/279252.svg)](https://asciinema.org/a/279252)
 
 The roots of this program come from [https://github.com/inab/benchmarking-data-model/tree/0.4.0/toolsForValidation](https://github.com/inab/benchmarking-data-model/tree/0.4.0/toolsForValidation)
