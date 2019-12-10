@@ -92,7 +92,7 @@ class CurieSearch(object):
 				raise ValidationError('The namespace {} was not found in identifiers.org cache'.format(prefix))
 		
 			pat = re.compile(curie.pattern)
-			found = pat.search(valToVal) or pat.search(origVal)
+			found = pat.search(valToVal) or pat.search(origValue)
 		
 		return found
 	
