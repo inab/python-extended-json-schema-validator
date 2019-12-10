@@ -1,7 +1,10 @@
 #json
 jsonschema[format] >= 3.0.0
 uritools
-owlready2
+# Optimized version of Owlready2 needs cython
+cython
+#owlready2 >= 0.23
+hg+https://bitbucket.org/jibalamy/owlready2@37c3ef7e481c94ae8a59796d37d64f60ba686014#egg=Owlready2
 pyxdg
 dateparser
 rfc3987
