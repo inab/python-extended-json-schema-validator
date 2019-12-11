@@ -86,6 +86,7 @@ class OntologyTerm(object):
 			searchType: termPat 
 		}
 		isValid = False
+		invalidAncestors = False
 		for ontology in ontlist:
 			onto = w.get_ontology(ontology).load()
 			w.save()
@@ -117,14 +118,15 @@ class OntologyTerm(object):
 					
 					# Continue searching
 					if not isValid:
+						invalidAncestors = True
 						continue
 				else:
 					isValid = True
 				break
 		
 		if not isValid:
-			if ancestors:
-				raise ValidationError("Term {0} , forced to have ancestors {1} was not found in these ontologies: {2}".format(self.term,ancestors,ontlist))
+			if invalidAncestors:
+				raise ValidationError("Term {0} does not have as ancestor(s) any of {1} in these ontologies: {2}".format(self.term,' , '.join(ancestors),' '.join(ontlist)))
 			else:
 				raise ValidationError("Term {0} was not found in these ontologies: {1}".format(self.term,ontlist))
 		return True

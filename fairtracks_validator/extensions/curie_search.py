@@ -172,7 +172,7 @@ class CurieSearch(object):
 				# Now, let's check!
 				validated, patterns = curieS.isValid(validator,nslist,value,schema)
 				if not validated:
-					yield ValidationError("Value '{0}' does not validate to any pattern ({1}) of the allowed schemes: {2}".format(value,patterns,nslist))
+					yield ValidationError("Value '{0}' does not validate to any pattern ({1}) of the allowed schemes: {2}".format(value,'/'+'/, /'.join(patterns)+'/',', '.join(nslist)))
 			except ValidationError as v:
 				yield v
 			except ValueError as ve:
