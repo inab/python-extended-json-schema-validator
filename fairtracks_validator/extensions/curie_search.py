@@ -50,16 +50,27 @@ class CurieSearch(object):
 		if parsed:
 			prefix = parsed.get('scheme')
 			if prefix:
-				if (len(prefix) > 0) and (matchType == 'loose'):
-					matchType = 'canonical'
-
+				if len(prefix) > 0:
+					if matchType == 'loose':
+						matchType = 'canonical'
+					
+					# We have to enforce lowercase schemes
+					if prefix.lower() != prefix:
+						raise ValidationError('The namespace of {} must be in lower case'.format(origValue))
+		
+		if nslist:
+			# The restricted namespaces list could have some of them in capitals
+			l_nslist = list(map(lambda x: None  if x is None  else x.lower()  if isinstance(x,str)  else str(x).lower(), nslist))
+		else:
+			l_nslist = nslist
+		
 		if matchType == 'basic':
 			# Basic mode is like canonical, but without querying identifiers.org cache
-			found = nslist and (prefix in nslist)
+			found = l_nslist and (prefix in l_nslist)
 		elif matchType == 'loose':
-			if nslist:
+			if l_nslist:
 				valToVal = origValue
-				validatedCURIEs = list(filter(lambda curie: curie is not None,map(lambda namespace: cache.get(namespace),nslist)))
+				validatedCURIEs = list(filter(lambda curie: curie is not None,map(lambda namespace: cache.get(namespace),l_nslist)))
 				if not validatedCURIEs:
 					raise ValidationError('No namespace from {} was found in identifiers.org cache'.format(nslist))
 				
@@ -78,7 +89,7 @@ class CurieSearch(object):
 			# Searching in canonical mode. To do that, we have to remove the prefix
 			valToVal = origValue[(origValue.find(':')+1):]
 			# The case where the namespace list is empty
-			if nslist and (prefix not in nslist):
+			if l_nslist and (prefix not in l_nslist):
 				raise ValidationError('The namespace {} is not in the list of the accepted ones: {}'.format(prefix,nslist))
 			
 			curie = cache.get(prefix)
