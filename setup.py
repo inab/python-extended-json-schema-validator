@@ -14,7 +14,7 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
 	name="fairtracks_validator",
-	version="0.6.2",
+	version="0.6.3",
 	scripts=["fairGTrackJsonValidate.py"],
 	author="José Mª Fernández",
 	author_email="jose.m.fernandez@bsc.es",
