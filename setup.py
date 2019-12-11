@@ -11,7 +11,7 @@ with open("README.md", "r") as fh:
 # Populating the install requirements
 with open('requirements.txt') as f:
 	requirements = []
-	egg = re.compile(r"#egg=([^=]+)$")
+	egg = re.compile(r"#[^#]*egg=([^=&]+)")
 	for line in f.read().splitlines():
 		m = egg.search(line)
 		requirements.append(line  if m is None  else m.group(1))
