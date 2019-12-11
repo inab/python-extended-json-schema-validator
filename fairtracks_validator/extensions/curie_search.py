@@ -32,6 +32,7 @@ class CurieSearch(object):
 	
 	def isValid(self,validator,nslist,origValue,schema):
 		found = False
+		checkedPatterns = []
 		matchType = str(schema.get('matchType','loose'))  if schema is not None  else 'canonical'
 		if matchType not in CurieSearch.VALID_MATCHES:
 			raise ValidationError("attribute 'matchType' is {0} but it must be one of the next values: {1}".format(matchType,CurieSearch.VALID_MATCHES.keys()))
@@ -72,6 +73,7 @@ class CurieSearch(object):
 				
 				# Looking for a match
 				for curie in validatedCURIEs:
+					checkedPatterns.append(curie.pattern)
 					pat = re.compile(curie.pattern)
 					if pat.search(valToVal):
 						found = True
@@ -90,11 +92,12 @@ class CurieSearch(object):
 			curie = cache.get(l_prefix)
 			if not curie:
 				raise ValidationError('The namespace {} was not found in identifiers.org cache'.format(prefix))
-		
+			
+			checkedPatterns.append(curie.pattern)
 			pat = re.compile(curie.pattern)
 			found = pat.search(valToVal) or pat.search(origValue)
 		
-		return found
+		return found, checkedPatterns
 	
 	@classmethod
 	def GetCurieCache(cls):
@@ -164,8 +167,9 @@ class CurieSearch(object):
 					curieS = cls(value)
 				
 				# Now, let's check!
-				if not curieS.isValid(validator,nslist,value,schema):
-					yield ValidationError("Value '{0}' does not validate to any of the allowed schemes: {1}".format(value,nslist))
+				validated, patterns = curieS.isValid(validator,nslist,value,schema)
+				if not validated:
+					yield ValidationError("Value '{0}' does not validate to any pattern ({1}) of the allowed schemes: {2}".format(value,patterns,nslist))
 			except ValidationError as v:
 				yield v
 			except ValueError as ve:
