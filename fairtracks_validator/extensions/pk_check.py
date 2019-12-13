@@ -9,6 +9,12 @@ import sys
 import re
 import json
 
+from urllib.request import Request, urlopen
+from urllib.parse import urlparse, urljoin
+import urllib.error
+
+import codecs
+
 class PrimaryKey(UniqueKey):
 	KeyAttributeName = 'primary_key'
 	SchemaErrorReason = 'dup_pk'
@@ -16,10 +22,15 @@ class PrimaryKey(UniqueKey):
 	# Each instance represents the set of keys from one ore more JSON Schemas
 	def __init__(self,schemaURI,config={}):
 		super().__init__(schemaURI,config)
+		self.doPopulate = False
+		self.gotIds = None
+		self.warmedUp = False
+		self.compURL = None
 	
 	@property
 	def triggerAttribute(self):
 		return self.KeyAttributeName
+	
 	@property
 	def triggerJSONSchemaDef(self):
 		return {
@@ -45,46 +56,63 @@ class PrimaryKey(UniqueKey):
 	def _errorReason(self):
 		return self.SchemaErrorReason
 	
-	#@property
-	#def needsBootstrapping(self):
-	#	return True
-		
-	#def bootstrap(self, metaSchemaURI, jsonSchema):
-	#	super().bootstrap(metaSchemaURI,jsonSchema)
-	#	
-	#	# Now, save the physical occurrence of the 
-	#	import pprint , sys
-	#	pprint.pprint(self.bootstrapMessages,stream=sys.stderr)
-	#	sys.stderr.flush()
+	def warmUpCaches(self):
+		self.warmedUp = True
+		setup = self.config.get(self.KeyAttributeName)
+		if setup is not None:
+			prefix = setup.get('schema_prefix')
+			if prefix != self.schemaURI:
+				url_base = setup.get('provider')
+				accept = setup.get('accept')
+				if (url_base is not None) and (accept is not None):
+					# Fetch the ids, based on the id
+					relColId = urlparse(self.schemaURI).path.split('/')[-1]
+					compURL = urljoin(url_base,relColId + '/')
+					r = Request(compURL,headers={'Accept': accept})
+					
+					try:
+						with urlopen(r) as f:
+							if f.getcode() == 200:
+								self.gotIds = str(f.read(),'utf-8').split()
+								self.doPopulate = len(self.gotIds) > 0
+								if self.doPopulate:
+									self.compURL = compURL
+					except urllib.error.HTTPError as he:
+						print("ERROR: Unable to fetch remote keys data [{0}]: {1}".format(he.code,he.reason), file=sys.stderr)
+					except urllib.error.URLError as ue:
+						print("ERROR: Unable to fetch remote keys data: {0}".format(ue.reason), file=sys.stderr)
+					except:
+						print("ERROR: Unable to parse remote keys data from "+compURL, file=sys.stderr)
 	
-	#def validate(self,validator,pk_state,value,schema):
-	#	if pk_state:
-	#		print(id(pk_state),file=sys.stderr)
-	#		print(id(value),file=sys.stderr)
-	#		print(id(schema),file=sys.stderr)
-	#		sys.stderr.flush()
-	#		
-	#		if isinstance(pk_state,list):
-	#			obtainedValues = self.GetKeyValues(value,pk_state)
-	#		else:
-	#			obtainedValues = [(value,)]
-	#		
-	#		isAtomicValue = len(obtainedValues) == 1 and len(obtainedValues[0]) == 1 and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
-	#		
-	#		if isAtomicValue:
-	#			theValues = [ obtainedValues[0][0] ]
-	#		else:
-	#			theValues = self.GenKeyStrings(obtainedValues)
-	#		
-	#		# Check the unicity
-	#		pk_id = id(schema)
-	#		
-	#		# The common dictionary where all the unique values are kept
-	#		pkSet = self.UniqueWorld.setdefault(pk_id,set())
-	#		
-	#		# Should it complain about this?
-	#		for theValue in theValues:
-	#			if theValue in pkSet:
-	#				yield ValidationError("Value -=> {0} <=-  is duplicated".format(theValue))
-	#			else:
-	#				pkSet.add(theValue)
+	def validate(self,validator,unique_state,value,schema):
+		if not self.warmedUp:
+			self.warmUpCaches()
+		
+		if unique_state and self.doPopulate:
+			# Deactivate future populations
+			self.doPopulate = False
+			if self.gotIds:
+				# Needed to populate the cache of ids
+				unique_id = id(schema)
+				
+				# The common dictionary for this declaration where all the unique values are kept
+				uniqueDef = self.UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=unique_state,values=dict()))
+				uniqueSet = uniqueDef.values
+				
+				# Should it complain about this?
+				for theValue in self.gotIds:
+					if theValue in uniqueSet:
+						yield ValidationError("Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(self.triggerAttribute, theValue,uniqueSet[theValue]),validator_value={"reason": self._errorReason})
+					else:
+						uniqueSet[theValue] = self.compURL
+		
+		super().validate(validator,unique_state,value,schema)
+	
+	def invalidateCaches(self):
+		self.warmedUp = False
+		self.gotIds = None
+	
+	def cleanup(self):
+		super().cleanup()
+		if self.warmedUp:
+			self.doPopulate = True
