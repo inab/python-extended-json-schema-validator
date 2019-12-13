@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from collections import namedtuple
+
+from .abstract_check import AbstractCustomFeatureValidator
+
 from jsonschema.exceptions import FormatError, ValidationError
 
 import sys
@@ -16,13 +20,66 @@ else:
 	ALLOWED_KEY_TYPES=(str,unicode)
 	ALLOWED_ATOMIC_VALUE_TYPES=(int,long,str,unicode,float,bool,type(None))
 
-class UniqueKey(object):
+UniqueLoc = namedtuple('UniqueLoc',['schemaURI','path'])
+UniqueDef = namedtuple('UniqueDef',['uniqueLoc','members','values'])
+
+class UniqueKey(AbstractCustomFeatureValidator):
 	KeyAttributeName = 'unique'
+	SchemaErrorReason = 'dup_unique'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
 	def __init__(self,schemaURI):
-		self.schemaURI = schemaURI
+		super().__init__(schemaURI)
 		self.UniqueWorld = dict()
+	
+	@property
+	def triggerAttribute(self):
+		return self.KeyAttributeName
+	
+	@property
+	def triggerJSONSchemaDef(self):
+		return {
+			self.triggerAttribute : {
+				"oneOf": [
+					{
+						"type": "boolean"
+					}
+					,
+					{
+						"type": "array",
+						"items": {
+							"type": "string",
+							"minLength": 1
+						},
+						"uniqueItems": True
+					}
+				]
+			}
+		}
+	
+	@property
+	def _errorReason(self):
+		return self.SchemaErrorReason
+	
+	@property
+	def needsBootstrapping(self):
+		return True
+	
+	def bootstrap(self, metaSchemaURI, jsonSchema):
+		super().bootstrap(metaSchemaURI,jsonSchema)
+		
+		# Saving the unique locations
+		for loc in self.bootstrapMessages:
+			uLoc = UniqueLoc(schemaURI=self.schemaURI,path=loc['path'])
+			uId = loc['v']['f_id']
+			uDef = self.UniqueWorld.get(uId)
+			
+			# This control is here for multiple inheritance cases
+			if uId in self.UniqueWorld:
+				uDef.uniqueLoc.append(uLoc)
+			else:
+				uDef = UniqueDef(uniqueLoc=[uLoc],members=loc['v']['f_val'],values=dict())
+				self.UniqueWorld[uId] = uDef
 	
 	JStepPat = re.compile(r"^([^\[]+)\[(0|[1-9][0-9]+)?\]$")
 
@@ -133,15 +190,16 @@ class UniqueKey(object):
 			# Check the unicity
 			unique_id = id(schema)
 			
-			# The common dictionary where all the unique values are kept
-			uniqueSet = self.UniqueWorld.setdefault(unique_id,set())
+			# The common dictionary for this declaration where all the unique values are kept
+			uniqueDef = self.UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=unique_state,values=dict()))
+			uniqueSet = uniqueDef.values
 			
 			# Should it complain about this?
 			for theValue in theValues:
 				if theValue in uniqueSet:
-					yield ValidationError("Value -=> {0} <=-  is duplicated".format(theValue))
-				
-				uniqueSet.add(theValue)
+					yield ValidationError("Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(self.triggerAttribute, theValue,uniqueSet[theValue]),validator_value={"reason": self._errorReason})
+				else:
+					uniqueSet[theValue] = self.currentJSONFile
 	
 	def cleanup(self):
 		self.UniqueWorld = dict()
