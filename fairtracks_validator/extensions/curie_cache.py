@@ -136,7 +136,7 @@ id = :query
 				raise KeyError('Namespace {} not found'.format(key))
 			
 			return Curie(*res)
-
+	
 
 class CurieCache(AbstractCurieCache):
 	REGISTRY_LINK='https://registry.api.identifiers.org'
@@ -149,50 +149,59 @@ class CurieCache(AbstractCurieCache):
 			cur = self.conn.cursor()
 			
 			# Download the registry to parse it
-			with urllib.request.urlopen(self.REGISTRY_DUMP_LINK) as f:
-				reader = codecs.getreader('utf-8')
-				registry = json.load(reader(f))
+			registry = None
+			try:
+				with urllib.request.urlopen(self.REGISTRY_DUMP_LINK) as f:
+					reader = codecs.getreader('utf-8')
+					registry = json.load(reader(f))
+			except urllib.error.HTTPError as he:
+				print("ERROR: Unable to fetch identifiers.org data [{0}]: {1}".format(he.code,he.reason), file=sys.stderr)
+			except urllib.error.URLError as ue:
+				print("ERROR: Unable to fetch identifiers.org data: {0}".format(ue.reason), file=sys.stderr)
+			except:
+				print("ERROR: Unable to parse identifiers.org data from "+self.REGISTRY_DUMP_LINK, file=sys.stderr)
 			
-			# First round, having the update date of the whole
-			# set derived from the last updated entry
-			last_updated = datetime.min.replace(tzinfo=timezone.utc)
-			for nsDecl in registry['payload']['namespaces']:
-				modified = dateparser.parse(nsDecl['modified'])
-				if last_updated < modified:
-					last_updated = modified
-			
-			# JSON result does not have this
-			last_generated = datetime.now(timezone.utc)
-			
-			cur.execute("""
+			if registry is not None:
+				# First round, having the update date of the whole
+				# set derived from the last updated entry
+				last_updated = datetime.min.replace(tzinfo=timezone.utc)
+				for nsDecl in registry['payload']['namespaces']:
+					modified = dateparser.parse(nsDecl['modified'])
+					if last_updated < modified:
+						last_updated = modified
+				
+				# JSON result does not have this
+				last_generated = datetime.now(timezone.utc)
+				
+				cur.execute("""
 SELECT last_updated
 FROM metadata
 WHERE DATETIME(last_updated) >= :lu
 """,{'lu': last_updated})
-			if cur.fetchone() is not None:
-				cur.execute("""
+				if cur.fetchone() is not None:
+					cur.execute("""
 UPDATE metadata SET last_generated = :lg
 """,{'lg': last_generated})
-			else:
-				# It is time to drop everything and start again
-				with self.conn:
-					cur.execute("""DELETE FROM namespaces""")
-					cur.execute("""DELETE FROM metadata""")
-					
-					cur.execute("""
+				else:
+					# It is time to drop everything and start again
+					with self.conn:
+						cur.execute("""DELETE FROM namespaces""")
+						cur.execute("""DELETE FROM metadata""")
+						
+						cur.execute("""
 INSERT INTO metadata VALUES (:lg,:lu)
 """,{'lg': last_generated,'lu': last_updated})
-					
-					# Now, iterate over the namespaces
-					for nsDecl in registry['payload']['namespaces']:
-						cId = nsDecl['mirId']
-						cPattern = nsDecl['pattern']
-						cNS = nsDecl['prefix']
-						cName = nsDecl['name']
-						cur.execute("""
+						
+						# Now, iterate over the namespaces
+						for nsDecl in registry['payload']['namespaces']:
+							cId = nsDecl['mirId']
+							cPattern = nsDecl['pattern']
+							cNS = nsDecl['prefix']
+							cName = nsDecl['name']
+							cur.execute("""
 INSERT INTO namespaces VALUES (:id,:ns,:name,:pat)
 """,{'id': cId,'ns': cNS,'name': cName,'pat': cPattern})
-		
+			
 			cur.close()
 
 class CurieCacheClassic(AbstractCurieCache):
