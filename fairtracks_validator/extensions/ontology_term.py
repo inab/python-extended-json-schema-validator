@@ -30,8 +30,8 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 	MatchTypeAttrName = 'matchType'
 	AncestorsAttrName = 'ancestors'
 	
-	def __init__(self,schemaURI):
-		super().__init__(schemaURI)
+	def __init__(self,schemaURI,config={}):
+		super().__init__(schemaURI,config)
 		self.ontologies = []
 	
 	@property

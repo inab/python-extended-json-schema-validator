@@ -14,8 +14,8 @@ class PrimaryKey(UniqueKey):
 	SchemaErrorReason = 'dup_pk'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self,schemaURI):
-		super().__init__(schemaURI)
+	def __init__(self,schemaURI,config={}):
+		super().__init__(schemaURI,config)
 	
 	@property
 	def triggerAttribute(self):

@@ -16,7 +16,7 @@ PLAIN_VALIDATOR_MAPPER = {
 }
 
 
-def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidators):
+def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidators,config={}):
 	extendedValidators = validator.VALIDATORS.copy()
 	customValidatorsInstances = []
 	
@@ -29,7 +29,7 @@ def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidator
 		
 		# Now, populating
 		for dynamicValidatorClass in inputCustomValidators[None]:
-			dynamicValidator = dynamicValidatorClass(schemaURI)
+			dynamicValidator = dynamicValidatorClass(schemaURI,config)
 			customValidatorsInstances.append(dynamicValidator)
 			
 			if dynamicValidator.triggerAttribute in instancedCustomValidators:

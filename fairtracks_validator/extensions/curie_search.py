@@ -27,8 +27,8 @@ class CurieSearch(AbstractCustomFeatureValidator):
 	KeyAttributeName = 'namespace'
 	MatchTypeAttrName = 'matchType'
 	
-	def __init__(self,schemaURI):
-		super().__init__(schemaURI)
+	def __init__(self,schemaURI,config={}):
+		super().__init__(schemaURI,config)
 	
 	@property
 	def triggerAttribute(self):

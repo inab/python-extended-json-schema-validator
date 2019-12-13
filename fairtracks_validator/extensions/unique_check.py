@@ -28,8 +28,8 @@ class UniqueKey(AbstractCustomFeatureValidator):
 	SchemaErrorReason = 'dup_unique'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self,schemaURI):
-		super().__init__(schemaURI)
+	def __init__(self,schemaURI,config={}):
+		super().__init__(schemaURI,config)
 		self.UniqueWorld = dict()
 	
 	@property

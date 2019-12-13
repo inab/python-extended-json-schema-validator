@@ -11,8 +11,9 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	FAIL_KEY = 'fail'
 	FAIL_MSG = 'Found'
 	
-	def __init__(self,schemaURI):
+	def __init__(self,schemaURI, config = {}):
 		self.schemaURI = schemaURI
+		self.config = config
 		self.bootstrapMessages = None
 		self.currentJSONFile = '(unset)'
 

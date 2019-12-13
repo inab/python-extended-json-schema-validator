@@ -7,6 +7,14 @@ import os
 import argparse
 import time
 
+import yaml
+# We have preference for the C based loader and dumper, but the code
+# should fallback to default implementations when C ones are not present
+try:
+	from yaml import CLoader as YAMLLoader, CDumper as YAMLDumper
+except ImportError:
+	from yaml import Loader as YAMLLoader, Dumper as YAMLDumper
+
 # This is needed to assure open suports encoding parameter
 if sys.version_info[0] == 2:
 	# py2
@@ -38,6 +46,7 @@ from fairtracks_validator.validator import FairGTracksValidator
 
 if __name__ == "__main__":
 	ap = argparse.ArgumentParser(description="Validate JSON against JSON Schemas with extensions")
+	ap.add_argument('-C','--config',dest="configFilename",help="Configuration file (used by extensions)")
 	ap.add_argument('--invalidate',help="Caches are invalidated on startup", action='store_true')
 	grp = ap.add_mutually_exclusive_group()
 	grp.add_argument('--warm-up',dest="warmUp",help="Caches are warmed up on startup", action='store_const', const=True)
@@ -45,8 +54,14 @@ if __name__ == "__main__":
 	ap.add_argument('jsonSchemaDir', metavar='json_schema', help='The JSON Schema file or directory to validate and use')
 	ap.add_argument('json_files', metavar='json_file', nargs='*',help='The JSON files or directories to be validated')
 	args = ap.parse_args()
-
-	fgv = FairGTracksValidator()
+	
+	if args.configFilename:
+		with open(args.configFilename,"r",encoding="utf-8") as cf:
+			local_config = yaml.load(cf,Loader=YAMLLoader)
+	else:
+		local_config = {}
+	
+	fgv = FairGTracksValidator(config=local_config)
 	
 	numSchemas = fgv.loadJSONSchemas(args.jsonSchemaDir,verbose=True)
 	

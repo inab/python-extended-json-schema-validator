@@ -57,7 +57,7 @@ class ExtensibleValidator(object):
 		SCHEMA_KEY
 	]
 	
-	def __init__(self,customFormats=[], customTypes={}, customValidators=CustomBaseValidators):
+	def __init__(self,customFormats=[], customTypes={}, customValidators=CustomBaseValidators, config={}):
 		self.schemaHash = {}
 		self.CustomFormatCheckerInstance = JSV.FormatChecker()
 
@@ -67,6 +67,7 @@ class ExtensibleValidator(object):
 		
 		self.customTypes = customTypes
 		self.customValidators = customValidators
+		self.config = config
 	
 	@classmethod
 	def FindFKs(cls,jsonSchema,jsonSchemaURI,prefix=""):
@@ -212,7 +213,7 @@ class ExtensibleValidator(object):
 			idKey = '$id'  if '$id' in jsonSchema else 'id'
 			jsonSchemaURI = jsonSchema.get(idKey)
 			
-			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators)
+			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators,self.config)
 			schemaObj['customFormatInstances'] = customFormatInstances
 			schemaObj['validator'] = validator
 			
@@ -739,5 +740,5 @@ class FairGTracksValidator(ExtensibleValidator):
 		]
 	}
 	
-	def __init__(self,customFormats=CustomFormats, customTypes=CustomTypes, customValidators=CustomValidators):
-		super().__init__(customFormats,customTypes,customValidators)
+	def __init__(self,customFormats=CustomFormats, customTypes=CustomTypes, customValidators=CustomValidators, config=None):
+		super().__init__(customFormats,customTypes,customValidators,config)
