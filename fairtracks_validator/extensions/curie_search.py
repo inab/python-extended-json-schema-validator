@@ -6,7 +6,9 @@ import uritools
 from jsonschema.compat import str_types
 from jsonschema.exceptions import FormatError, ValidationError
 
+from .abstract_check import AbstractCustomFeatureValidator
 from .curie_cache import CurieCache, Curie
+
 import re
 import xdg
 import os, sys
@@ -14,7 +16,7 @@ import tempfile
 import shutil
 import atexit
 
-class CurieSearch(object):
+class CurieSearch(AbstractCustomFeatureValidator):
 	VALID_MATCHES = {
 		'canonical': None,
 		'loose': None,
@@ -23,21 +25,70 @@ class CurieSearch(object):
 	
 	FormatName = 'curie'
 	KeyAttributeName = 'namespace'
+	MatchTypeAttrName = 'matchType'
 	
-	def __init__(self,curie):
-		if isinstance(curie,object):
-			self.curie = curie
-		else:
-			self.curie = uritools.urisplit(curie)
+	def __init__(self,schemaURI):
+		super().__init__(schemaURI)
+	
+	@property
+	def triggerAttribute(self):
+		return self.KeyAttributeName
+	
+	@property
+	def triggerJSONSchemaDef(self):
+		return {
+			self.triggerAttribute : {
+				"oneOf": [
+					{
+						"type": "string"
+					}
+					,
+					{
+						"type": "array",
+						"items": {
+							"type": "string",
+							"minLength": 1
+						},
+						"minItems": 1
+					}
+				]
+			},
+			self.MatchTypeAttrName : {
+				"type": "string",
+				"enum": list(self.VALID_MATCHES.keys())
+			}
+		}
+	
+	@property
+	def needsBootstrapping(self):
+		return False
+	
+	def invalidateCaches(self):
+		self.InvalidateCurieCache()
+	
+	def warmUpCaches(self):
+		cache = self.GetCurieCache()
+	
+	@classmethod
+	def InvalidateCurieCache(cls):
+		if hasattr(cls,'CurieCache'):
+			cache = getattr(cls,'CurieCache')
+			delattr(cls,'CurieCache')
+			cache.invalidate()
+			del cache
+		
+		cachePath = cls.GetCurieCachePath()
+		delattr(cls,'CurieCachePath')
+		shutil.rmtree(cachePath,ignore_errors=True)
 	
 	def isValid(self,validator,nslist,origValue,schema):
 		found = False
 		checkedPatterns = []
-		matchType = str(schema.get('matchType','loose'))  if schema is not None  else 'canonical'
+		matchType = str(schema.get(self.MatchTypeAttrName,'loose'))  if schema is not None  else 'canonical'
 		if matchType not in CurieSearch.VALID_MATCHES:
-			raise ValidationError("attribute 'matchType' is {0} but it must be one of the next values: {1}".format(matchType,CurieSearch.VALID_MATCHES.keys()))
+			raise ValidationError("attribute '{0}' is {1} but it must be one of the next values: {2}".format(self.MatchTypeAttrName,matchType,CurieSearch.VALID_MATCHES.keys()))
 		
-		cache = CurieSearch.GetCurieCache()
+		cache = self.GetCurieCache()
 		
 		parsed = None
 		try:
@@ -103,8 +154,8 @@ class CurieSearch(object):
 		return found, checkedPatterns
 	
 	@classmethod
-	def GetCurieCache(cls):
-		if not hasattr(cls,'CurieCache'):
+	def GetCurieCachePath(cls):
+		if not hasattr(cls,'CurieCachePath'):
 			doTempDir = False
 			try:
 				cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
@@ -126,6 +177,15 @@ class CurieSearch(object):
 				cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
 				os.makedirs(cachePath, exist_ok=True)
 			
+			setattr(cls,'CurieCachePath',cachePath)
+		
+		return getattr(cls,'CurieCachePath')
+	
+	@classmethod
+	def GetCurieCache(cls):
+		cachePath = cls.GetCurieCachePath()
+		
+		if not hasattr(cls,'CurieCache'):
 			setattr(cls,'CurieCache',CurieCache(filename=os.path.join(cachePath,'CURIE_cache.sqlite3')))
 		
 		return getattr(cls,'CurieCache')
@@ -147,13 +207,12 @@ class CurieSearch(object):
 		else:
 			return False
 	
-	@classmethod
-	def IsValidCurie(cls,validator,namespace,value,schema):
+	def validate(self,validator,namespace,value,schema):
 		"""
 		This method is here to be registered with custom validators
 		"""
 		# We do the validation only when the format is defined
-		if (schema is None) or (schema.get("format") == cls.FormatName):
+		if (schema is None) or (schema.get("format") == self.FormatName):
 			# Managing the different cases
 			if namespace is None:
 				nslist = []
@@ -163,14 +222,8 @@ class CurieSearch(object):
 				nslist = [ namespace ]
 			
 			try:
-				# First, having something workable
-				if isinstance(value,cls):
-					curieS = value
-				else:
-					curieS = cls(value)
-				
 				# Now, let's check!
-				validated, patterns = curieS.isValid(validator,nslist,value,schema)
+				validated, patterns = self.isValid(validator,nslist,value,schema)
 				if not validated:
 					yield ValidationError("Value '{0}' does not validate to any pattern ({1}) of the allowed schemes: {2}".format(value,'/'+'/, /'.join(patterns)+'/',', '.join(nslist)))
 			except ValidationError as v:
@@ -181,7 +234,7 @@ class CurieSearch(object):
 				import traceback
 				traceback.print_exc()
 				yield ValidationError("Unexpected error: {}".format(str(be)))
-	
+
 	@classmethod
 	def IsCorrectFormat(cls, value, schema = None):
 		"""
@@ -189,7 +242,8 @@ class CurieSearch(object):
 		return true
 		"""
 		if schema and (':' in str(value)):
-			for val in cls.IsValidCurie(None,schema.get(cls.KeyAttributeName) if schema else None,value,schema):
+			curie = cls(None)
+			for val in curie.validate(None,schema.get(cls.KeyAttributeName) if schema else None,value,schema):
 				if isinstance(val,ValidationError):
 					print(val.message,file=sys.stderr)
 					return False

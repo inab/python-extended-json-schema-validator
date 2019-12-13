@@ -14,7 +14,9 @@ import tempfile
 import shutil
 import atexit
 
-class OntologyTerm(object):
+from .abstract_check import AbstractCustomFeatureValidator
+
+class OntologyTerm(AbstractCustomFeatureValidator):
 	VALID_MATCHES = {
 		'exact': 'iri',
 		'suffix': 'iri',
@@ -25,13 +27,97 @@ class OntologyTerm(object):
 	
 	FormatName = 'term'
 	KeyAttributeName = 'ontology'
+	MatchTypeAttrName = 'matchType'
+	AncestorsAttrName = 'ancestors'
 	
-	def __init__(self,term):
-		self.term = term
+	def __init__(self,schemaURI):
+		super().__init__(schemaURI)
+		self.ontologies = []
+	
+	@property
+	def triggerAttribute(self):
+		return self.KeyAttributeName
+	
+	@property
+	def triggerJSONSchemaDef(self):
+		return {
+			self.triggerAttribute : {
+				"oneOf": [
+					{
+						"type": "string",
+						"format": "uri"
+					}
+					,
+					{
+						"type": "array",
+						"items": {
+							"type": "string",
+							"format": "uri",
+							"minLength": 1
+						},
+						"minItems": 1
+					}
+				]
+			},
+			self.MatchTypeAttrName : {
+				"type": "string",
+				"enum": list(self.VALID_MATCHES.keys())
+			},
+			self.AncestorsAttrName : {
+				"oneOf": [
+					{
+						"type": "string",
+						"format": "uri"
+					}
+					,
+					{
+						"type": "array",
+						"items": {
+							"type": "string",
+							"format": "uri",
+							"minLength": 1
+						},
+						"minItems": 1
+					}
+				]
+			}
+		}
+	
+	@property
+	def needsBootstrapping(self):
+		return True
+	
+	def bootstrap(self, metaSchemaURI, jsonSchema):
+		super().bootstrap(metaSchemaURI,jsonSchema)
+		
+		# Saving the unique locations
+		uIdSet = set()
+		for loc in self.bootstrapMessages:
+			uId = loc['v']['f_id']
+			ontlist = loc['v']['f_val']
+			
+			if uId not in uIdSet:
+				if isinstance(ontlist,list):
+					self.ontologies.extend(ontlist)
+				else:
+					self.ontologies.append(ontlist)
+				uIdSet.add(uId)
+	
+	def invalidateCaches(self):
+		self.InvalidateWorld()
+	
+	def warmUpCaches(self):
+		w = self.GetWorld()
+		for ontology in self.ontologies:
+			onto = w.get_ontology(ontology).load()
+			w.save()
+			# Only activate this if you want a copy of the ontology,
+			# but it fires revalidations everytime!
+			#onto.save()
 	
 	@classmethod
-	def GetWorld(cls):
-		if not hasattr(cls,'TermWorld'):
+	def GetWorldDBPath(cls):
+		if not hasattr(cls,'TermWorldPath'):
 			doTempDir = False
 			try:
 				cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
@@ -52,24 +138,48 @@ class OntologyTerm(object):
 				#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
 				cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
 				os.makedirs(cachePath, exist_ok=True)
+		
+			setattr(cls,'TermWorldPath',os.path.join(cachePath,'owlready2.sqlite3'))
+		
+		return getattr(cls,'TermWorldPath')
+	
+	@classmethod
+	def InvalidateWorld(cls):
+		# First, close the world and dispose its instance
+		if hasattr(cls,'TermWorld'):
+			w = getattr(cls,'TermWorld')
+			w.close()
+			del w
+			delattr(cls,'TermWorld')
+		
+		# Then, remove the world database
+		worldDBPath = cls.GetWorldDBPath()
+		delattr(cls,'TermWorldPath')
+		if os.path.exists(worldDBPath):
+			os.unlink(worldDBPath)
+	
+	@classmethod
+	def GetWorld(cls):
+		if not hasattr(cls,'TermWorld'):
+			worldDBPath = cls.GetWorldDBPath()
 			
 			# Activate this only if you want to save a copy of the ontologies
 			#ontologiesPath = os.path.join(cachePath,'ontologies')
 			#os.makedirs(ontologiesPath,exist_ok=True)
 			#owlready2.onto_path.append(ontologiesPath)
-			setattr(cls,'TermWorld',owlready2.World(filename=os.path.join(cachePath,'owlready2.sqlite3'), exclusive=False))
+			setattr(cls,'TermWorld',owlready2.World(filename=worldDBPath, exclusive=False))
 		
 		return getattr(cls,'TermWorld')
 	
-	def isValid(self,validator,ontlist,origValue,schema):
-		w = OntologyTerm.GetWorld()
+	def isValid(self,validator,ontlist,term,schema):
+		w = self.GetWorld()
 		
 		# Getting the potential parents
-		ancestors = schema.get('ancestors',[])
-		partialMatches = str(schema.get('matchType','exact'))
+		ancestors = schema.get(self.AncestorsAttrName,[])
+		partialMatches = str(schema.get(self.MatchTypeAttrName,'exact'))
 		
-		if partialMatches not in OntologyTerm.VALID_MATCHES:
-			raise ValidationError("attribute 'matchType' is {0} but it must be one of the next values: {1}".format(partialMatches,OntologyTerm.VALID_MATCHES.keys()))
+		if partialMatches not in self.VALID_MATCHES:
+			raise ValidationError("attribute '{0}' is {1} but it must be one of the next values: {2}".format(self.MatchTypeAttrName,partialMatches,self.VALID_MATCHES.keys()))
 		
 		if not isinstance(ancestors,list):
 			ancestors = [ ancestors ]
@@ -79,9 +189,9 @@ class OntologyTerm(object):
 		else:
 			ancestorPats = ancestors
 		
-		searchType = OntologyTerm.VALID_MATCHES[partialMatches]
+		searchType = self.VALID_MATCHES[partialMatches]
 		
-		termPat = '*' + self.term  if partialMatches == 'suffix' else self.term
+		termPat = '*' + term  if partialMatches == 'suffix' else term
 		queryParams = {
 			searchType: termPat 
 		}
@@ -126,9 +236,9 @@ class OntologyTerm(object):
 		
 		if not isValid:
 			if invalidAncestors:
-				raise ValidationError("Term {0} does not have as ancestor(s) any of {1} in these ontologies: {2}".format(self.term,' , '.join(ancestors),' '.join(ontlist)))
+				raise ValidationError("Term {0} does not have as ancestor(s) any of {1} in these ontologies: {2}".format(term,' , '.join(ancestors),' '.join(ontlist)))
 			else:
-				raise ValidationError("Term {0} was not found in these ontologies: {1}".format(self.term,ontlist))
+				raise ValidationError("Term {0} was not found in these ontologies: {1}".format(term,' '.join(ontlist)))
 		return True
 	
 	@classmethod
@@ -139,40 +249,34 @@ class OntologyTerm(object):
 		# Right now we are only considering fully qualified terms, i.e. URIs
 		return rfc3987.parse(instance, rule="URI")
 	
-	@classmethod
-	def IsValidTerm(cls,validator,ontology,value,schema):
+	def validate(self,validator,ontology,term,schema):
 		"""
 		This method is here to be registered with custom validators
 		"""
 		# We do the validation only when the format is defined
-		if schema.get("format") == cls.FormatName:
+		if schema.get("format") == self.FormatName:
 			if ontology is None:
-				yield ValidationError("Attribute {0} has not been defined".format(cls.KeyAttributeName))
+				yield ValidationError("Attribute {0} has not been defined".format(self.KeyAttributeName))
 			
 			ontlist = ontology  if isinstance(ontology,list) else [ ontology ]
 			
 			if len(ontlist) == 0:
-				yield ValidationError("Attribute {0} does not have any ontology".format(cls.KeyAttributeName))
+				yield ValidationError("Attribute {0} does not have any ontology".format(self.KeyAttributeName))
 			
 			# First, having something workable
-			if isinstance(value,cls):
-				term = value
-			else:
-				term = cls(value)
-			
 			try:
 				isValid = True
 				for ont in ontlist:
 					parsed_ont = rfc3987.parse(ont, rule="URI")
 					
 					scheme = parsed_ont.get('scheme')
-					if scheme not in cls.VALID_SCHEMES:
+					if scheme not in self.VALID_SCHEMES:
 						isValid = False
 						yield ValidationError("Ontology {0} is not public available".format(ont))
 				
 				# Now, let's check against the list of ontologies!
-				if isValid and not term.isValid(validator,ontlist,value,schema):
-					yield ValidationError("Term {0} was not found in these ontologies: {1}".format(term.term,ontlist))
+				if isValid and not self.isValid(validator,ontlist,term,schema):
+					yield ValidationError("Term {0} was not found in these ontologies: {1}".format(term,ontlist))
 			except SyntaxError:
 				t,v,tr = sys.exc_info()
 				import pprint
@@ -208,7 +312,8 @@ class OntologyTerm(object):
 		if schema is None:
 			return True
 		else:
-			for val in cls.IsValidTerm(None,schema.get(cls.KeyAttributeName),value,schema):
+			termIns = cls(None)
+			for val in termIns.validate(None,schema.get(cls.KeyAttributeName),value,schema):
 				if isinstance(val,ValidationError):
 					return False
 			return True
