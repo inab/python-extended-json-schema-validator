@@ -38,71 +38,18 @@ else:
 from fairtracks_validator.extensions.curie_search import CurieSearch
 from fairtracks_validator.extensions.ontology_term import OntologyTerm
 from fairtracks_validator.extensions.unique_check import UniqueKey
+from fairtracks_validator.extensions.pk_check import PrimaryKey
 
-# This method returns both the extended Validator instance and the dynamic validators
-# to be reset on command
-def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidators):
-	extendedValidators = validator.VALIDATORS.copy()
-	customValidatorsInstances = []
-	
-	# Validators which must be instantiated
-	if None in inputCustomValidators:
-		instancedCustomValidators = inputCustomValidators.copy()
-		
-		# Removing the special entry
-		del instancedCustomValidators[None]
-		
-		# Now, populating
-		for dynamicValidatorClass in inputCustomValidators[None]:
-			dynamicValidator = dynamicValidatorClass(schemaURI)
-			customValidatorsInstances.append(dynamicValidator)
-			
-			# The method must exist, and accept the parameters
-			# declared on next documentation
-			# https://python-jsonschema.readthedocs.io/en/stable/creating/
-			instancedCustomValidators[dynamicValidator.KeyAttributeName] = dynamicValidator.validate
-	else:
-		instancedCustomValidators = inputCustomValidators
-	
-	extendedValidators.update(instancedCustomValidators)
-	
-	extendedChecker = validator.TYPE_CHECKER.redefine_many(inputCustomTypes)
-	
-	return JSV.validators.extend(validator, validators=extendedValidators , type_checker=extendedChecker) , customValidatorsInstances
+from .extend_validator import extendValidator , PLAIN_VALIDATOR_MAPPER
 
-class FairGTracksValidator(object):
-	# This has been commented out, as we are following the format validation path
-	CustomTypes = {
-	#	'curie': CurieSearch.IsCurie,
-	#	'term': OntologyTerm.IsTerm
-	}
-
-	CustomFormats = [
-		CurieSearch,
-		OntologyTerm
-	]
-	
-	CustomValidators = {
-		CurieSearch.KeyAttributeName: CurieSearch.IsValidCurie,
-		OntologyTerm.KeyAttributeName: OntologyTerm.IsValidTerm,
+class ExtensibleValidator(object):
+	CustomBaseValidators = {
 		None: [
-			UniqueKey
+			UniqueKey,
+			PrimaryKey
 		]
 	}
 	
-	ExtendedDraft4Validator = lambda schemaURI: extendValidator(schemaURI, JSV.validators.Draft4Validator, FairGTracksValidator.CustomTypes, FairGTracksValidator.CustomValidators)
-	ExtendedDraft6Validator = lambda schemaURI: extendValidator(schemaURI, JSV.validators.Draft6Validator, FairGTracksValidator.CustomTypes, FairGTracksValidator.CustomValidators)
-	ExtendedDraft7Validator = lambda schemaURI: extendValidator(schemaURI, JSV.validators.Draft7Validator, FairGTracksValidator.CustomTypes, FairGTracksValidator.CustomValidators)
-	
-	VALIDATOR_MAPPER = {
-		'http://json-schema.org/draft-04/schema#': ExtendedDraft4Validator,
-		'http://json-schema.org/draft-04/hyper-schema#': ExtendedDraft4Validator,
-		'http://json-schema.org/draft-06/schema#': ExtendedDraft6Validator,
-		'http://json-schema.org/draft-06/hyper-schema#': ExtendedDraft6Validator,
-		'http://json-schema.org/draft-07/schema#': ExtendedDraft7Validator,
-		'http://json-schema.org/draft-07/hyper-schema#': ExtendedDraft7Validator
-	}
-
 	SCHEMA_KEY = '$schema'
 	ALT_SCHEMA_KEYS = [
 		'@schema',
@@ -110,13 +57,16 @@ class FairGTracksValidator(object):
 		SCHEMA_KEY
 	]
 	
-	def __init__(self,CustomFormats=CustomFormats):
+	def __init__(self,customFormats=[], customTypes={}, customValidators=CustomBaseValidators):
 		self.schemaHash = {}
 		self.CustomFormatCheckerInstance = JSV.FormatChecker()
 
 		# Registering the custom formats, in order to use them
-		for CustomFormat in CustomFormats:
-			self.CustomFormatCheckerInstance.checks(CustomFormat.FormatName)(CustomFormat.IsCorrectFormat)
+		for customFormat in customFormats:
+			self.CustomFormatCheckerInstance.checks(customFormat.FormatName)(customFormat.IsCorrectFormat)
+		
+		self.customTypes = customTypes
+		self.customValidators = customValidators
 	
 	@classmethod
 	def FindFKs(cls,jsonSchema,jsonSchemaURI,prefix=""):
@@ -247,8 +197,8 @@ class FairGTracksValidator(object):
 				numFileIgnore += 1
 				continue
 			
-			validator_lambda = self.VALIDATOR_MAPPER.get(schemaValId)
-			if validator_lambda is None:
+			plain_validator = PLAIN_VALIDATOR_MAPPER.get(schemaValId)
+			if plain_validator is None:
 				if verbose:
 					print("\tIGNORE/FIXME: The JSON Schema id {0} is not being acknowledged by this validator".format(schemaValId))
 				errors.append({
@@ -262,11 +212,34 @@ class FairGTracksValidator(object):
 			idKey = '$id'  if '$id' in jsonSchema else 'id'
 			jsonSchemaURI = jsonSchema.get(idKey)
 			
-			validator , customFormatInstances = validator_lambda(jsonSchemaURI)
+			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators)
 			schemaObj['customFormatInstances'] = customFormatInstances
 			schemaObj['validator'] = validator
 			
-			valErrors = [ valError  for valError in validator(validator.META_SCHEMA).iter_errors(jsonSchema) ]
+			metaSchema = validator.META_SCHEMA
+			if len(customFormatInstances) > 0:
+				metaSchema = metaSchema.copy()
+				metaProps = metaSchema['properties']
+
+				for customFormatInstance in customFormatInstances:
+					for kF, vF in customFormatInstance.triggerJSONSchemaDef.items():
+						if kF in metaProps:
+							# Multiple declarations
+							vM = metaProps[kF]
+							
+							if 'anyOf' not in vM:
+								newDecl = {
+									'anyOf': [
+										vM
+									]
+								}
+								vM = metaProps[kF] = newDecl
+							
+							vM['anyOf'].append(vF)
+						else:
+							metaProps[kF] = vF
+			
+			valErrors = [ valError  for valError in validator(metaSchema).iter_errors(jsonSchema) ]
 			if len(valErrors) > 0:
 				if verbose:
 					print("\t- ERRORS:\n"+"\n".join(map(lambda se: "\t\tPath: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),se.path)),se.message) , valErrors))+"\n")
@@ -293,6 +266,12 @@ class FairGTracksValidator(object):
 				else:
 					if verbose:
 						print("\t- Validated {0}".format(jsonSchemaURI))
+					
+					if len(customFormatInstances) > 0:
+						for cFI in customFormatInstances:
+							# Bootstrapping the schema
+							# By default this is a no-op
+							cFI.bootstrap(schemaValId, jsonSchema)
 					
 					# Curating the primary key
 					p_PK = None
@@ -371,100 +350,26 @@ class FairGTracksValidator(object):
 		
 	def getValidSchemas(self):
 		return self.schemaHash
-
 	
-	JStepPat = re.compile(r"^([^\[]+)\[(0|[1-9][0-9]+)?\]$")
-
-	@classmethod
-	def MaterializeJPath(cls,jsonDoc, jPath):
-		objectives = [ jsonDoc ]
-		jSteps = jPath.split('.') if jPath not in ('.','') else (None,)
-		for jStep in jSteps:
-			newObjectives = []
-			isArray = False
-			arrayIndex = None
-			if jStep is not None:
-				jStepMatch = cls.JStepPat.search(jStep)
-				if jStepMatch is not None:
-					isArray = True
-					if jStepMatch.group(2) is not None:
-						arrayIndex = int(jStepMatch.group(2))
-					jStep = jStepMatch.group(1)
-			for objective in objectives:
-				isAvailable = False
-				if jStep is not None:
-					if isinstance(objective,dict):
-						if jStep in objective:
-							value = objective[jStep]
-							isAvailable = True
-					#else:
-					#	# Failing
-					#	return None
-				else:
-					value = objective
-					isAvailable = True
-				
-				if isAvailable:
-					if isinstance(value,(list,tuple)):
-						if arrayIndex is not None:
-							if arrayIndex >= 0 and arrayIndex < len(value):
-								newObjectives.append(value[arrayIndex])
-							#else:
-							#	return None
-						else:
-							newObjectives.extend(value)
-					else:
-						newObjectives.append(value)
-				#else:
-				#	# Failing
-				#	return None
-			
-			objectives = newObjectives
+	# This method invalidates the different cached elements as much
+	# as possible, 
+	def invalidateCaches(self):
+		p_schemasObj = self.getValidSchemas()
 		
-		# Flattening it (we return a reference to a list of atomic values)
-		for iobj, objective in enumerate(objectives):
-			if not isinstance(objective,ALLOWED_ATOMIC_VALUE_TYPES):
-				objectives[iobj] = json.dumps(objective, sort_keys=True)
+		for schemaObj in p_schemasObj.values():
+			dynSchemaVal = schemaObj['customFormatInstances']
+			for dynVal in dynSchemaVal:
+				dynVal.invalidateCaches()
+	
+	# This method warms up the different cached elements as much
+	# as possible, 
+	def warmUpCaches(self):
+		p_schemasObj = self.getValidSchemas()
 		
-		return objectives
-
-
-	# It fetches the values from a JSON, based on the given paths to the members of the key
-	@classmethod
-	def GetKeyValues(cls,jsonDoc,p_members):
-		return tuple(cls.MaterializeJPath(jsonDoc,member) for member in p_members)
-
-	@classmethod
-	def _aggPKhelper(cls,basePK,curPKvalue):
-		newPK = list(basePK)
-		newPK.append(curPKvalue)
-		return newPK
-
-	# It generates pk strings from a set of values
-	@classmethod
-	def GenKeyStrings(cls,keyTuple):
-		numPKcols = len(keyTuple)
-		if numPKcols == 0:
-			return []
-		
-		# Exiting in case some of the inputs is undefined
-		for curPKvalues in keyTuple:
-			# If there is no found value, generate nothing
-			if not isinstance(curPKvalues,(list, tuple)) or len(curPKvalues) == 0:
-				return []
-		
-		pkStrings = list(map(lambda elem: [ elem ], keyTuple[0]))
-		
-		for curPKvalues in keyTuple[1:]:
-			newPKstrings = []
-			
-			for curPKvalue in curPKvalues:
-				newPKstrings.extend(map(lambda basePK: cls._aggPKhelper(basePK,curPKvalue) , pkStrings))
-			
-			pkStrings = newPKstrings
-		
-		return tuple(map(lambda pkString: json.dumps(pkString, sort_keys=True, separators=(',',':')) , pkStrings))
-
+		for schemaObj in p_schemasObj.values():
+			dynSchemaVal = schemaObj['customFormatInstances']
+			for dynVal in dynSchemaVal:
+				dynVal.warmUpCaches()
 	
 	def _resetDynamicValidators(self,dynValList):
 		for dynVal in dynValList:
@@ -605,6 +510,9 @@ class FairGTracksValidator(object):
 					
 					schemaObj = p_schemaHash[jsonSchemaId]
 					
+					for customFormatInstance in schemaObj['customFormatInstances']:
+						customFormatInstance.setCurrentJSONFilename(jsonFile)
+					
 					# Registering the dynamic validators to be cleaned up
 					# when the validator finishes the session
 					if jsonSchemaId not in dynSchemaSet:
@@ -626,8 +534,13 @@ class FairGTracksValidator(object):
 						if verbose:
 							print("\t- ERRORS:\n"+"\n".join(map(lambda se: "\t\tPath: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),se.path)),se.message) , valErrors))+"\n")
 						for valError in valErrors:
+							if isinstance(valError.validator_value,dict):
+								schema_error_reason = valError.validator_value.get('reason','schema_error')
+							else:
+								schema_error_reason = 'schema_error'
+							
 							errors.append({
-								'reason': 'schema_error',
+								'reason': schema_error_reason,
 								'description': "Path: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),valError.path)),valError.message)
 							})
 						
@@ -646,8 +559,8 @@ class FairGTracksValidator(object):
 							else:
 								PKvals[jsonSchemaId] = p_PK = {}
 							
-							pkValues = self.GetKeyValues(jsonDoc,p_PK_def)
-							pkStrings = self.GenKeyStrings(pkValues)
+							pkValues = UniqueKey.GetKeyValues(jsonDoc,p_PK_def)
+							pkStrings = UniqueKey.GenKeyStrings(pkValues)
 							# Pass 1.a: check duplicate keys
 							for pkString in pkStrings:
 								if pkString in p_PK:
@@ -739,11 +652,11 @@ class FairGTracksValidator(object):
 					for p_FK_decl in p_FKs:
 						fkPkSchemaId, p_FK_def = p_FK_decl
 						
-						fkValues = self.GetKeyValues(jsonDoc,p_FK_def)
+						fkValues = UniqueKey.GetKeyValues(jsonDoc,p_FK_def)
 						
 						#print(fkValues,file=sys.stderr);
 						
-						fkStrings = self.GenKeyStrings(fkValues)
+						fkStrings = UniqueKey.GenKeyStrings(fkValues)
 						
 						if len(fkStrings) > 0:
 							if fkPkSchemaId in PKvals:
@@ -804,3 +717,27 @@ class FairGTracksValidator(object):
 			self._resetDynamicValidators(dynSchemaValList)
 		
 		return report
+
+class FairGTracksValidator(ExtensibleValidator):
+	# This has been commented out, as we are following the format validation path
+	CustomTypes = {
+	#	'curie': CurieSearch.IsCurie,
+	#	'term': OntologyTerm.IsTerm
+	}
+
+	CustomFormats = [
+		CurieSearch,
+		OntologyTerm
+	]
+	
+	CustomValidators = {
+		None: [
+			CurieSearch,
+			OntologyTerm,
+			UniqueKey,
+			PrimaryKey
+		]
+	}
+	
+	def __init__(self,customFormats=CustomFormats, customTypes=CustomTypes, customValidators=CustomValidators):
+		super().__init__(customFormats,customTypes,customValidators)
