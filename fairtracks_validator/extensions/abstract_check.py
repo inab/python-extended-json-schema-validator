@@ -78,6 +78,7 @@ class AbstractCustomFeatureValidator(abc.ABC):
 					#	elem[self.FAIL_KEY] = True
 			
 			bootstrapJSONSchema = plain_validator.META_SCHEMA.copy()
+			bootstrapJSONSchema['properties'] = bootstrapJSONSchema['properties'].copy()
 			bootstrapJSONSchema['properties'].update(extSchemaDef)
 			
 			# The way to get the location of all the occurrences of the key is using a custom validator
