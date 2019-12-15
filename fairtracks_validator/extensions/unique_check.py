@@ -3,7 +3,7 @@
 
 from collections import namedtuple
 
-from .abstract_check import AbstractCustomFeatureValidator
+from .abstract_check import AbstractCustomFeatureValidator, CheckContext
 
 from jsonschema.exceptions import FormatError, ValidationError
 
@@ -75,7 +75,7 @@ class UniqueKey(AbstractCustomFeatureValidator):
 			uDef = self.UniqueWorld.get(uId)
 			
 			# This control is here for multiple inheritance cases
-			if uId in self.UniqueWorld:
+			if uDef is not None:
 				uDef.uniqueLoc.append(uLoc)
 			else:
 				uDef = UniqueDef(uniqueLoc=[uLoc],members=loc['v']['f_val'],values=dict())
@@ -200,6 +200,9 @@ class UniqueKey(AbstractCustomFeatureValidator):
 					yield ValidationError("Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(self.triggerAttribute, theValue,uniqueSet[theValue]),validator_value={"reason": self._errorReason})
 				else:
 					uniqueSet[theValue] = self.currentJSONFile
+	
+	def getContext(self):
+		return CheckContext(schemaURI = self.schemaURI, context = self.UniqueWorld)
 	
 	def cleanup(self):
 		self.UniqueWorld = dict()
