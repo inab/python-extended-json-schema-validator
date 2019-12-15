@@ -3,9 +3,13 @@
 
 import abc
 from jsonschema.exceptions import ValidationError
+from collections import namedtuple
+
 import copy
 
 from ..extend_validator import extendValidator, PLAIN_VALIDATOR_MAPPER
+
+CheckContext = namedtuple('CheckContext',['schemaURI','context'])
 
 class AbstractCustomFeatureValidator(abc.ABC):
 	FAIL_KEY = 'fail'
@@ -41,8 +45,11 @@ class AbstractCustomFeatureValidator(abc.ABC):
 		yield ValidationError(self.FAIL_MSG,validator_value={'f_id': id(value),'f_val': value})
 	
 	@property
-	@abc.abstractmethod
 	def needsBootstrapping(self):
+		return False
+	
+	@property
+	def needsSecondPass(self):
 		return False
 	
 	#@property.currentJ.setter
@@ -91,9 +98,23 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	
 	# This method should be used to warm up the cached contents
 	# needed for the proper work of the extension
+	# It is forcedly run before the second validation pass
 	def warmUpCaches(self):
 		pass
 	
+	# This method should be used to apply a second pass in this instance, with all
+	# the information from other instances. It returns an array of ValidationErrors
+	# It is run after the forced cached warmup, and before the cleanup
+	def doSecondPass(self,l_customFeatureValidators):
+		return []
+	
+	# This method should be used to share the context of the extension
+	# which is usually needed on second pass works. It must return
+	# "CheckContext" named tuples
+	def getContext(self):
+		return None
+	
+	# It should be run after all the second validation passes are run
 	# By default, it is a no-op
 	def cleanup(self):
 		pass
