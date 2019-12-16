@@ -91,6 +91,13 @@ class AbstractCustomFeatureValidator(abc.ABC):
 				# Capture only ourselves
 				if valError.message == self.FAIL_MSG:
 					self.bootstrapMessages.append({ 'path': "/".join(map(lambda e: str(e),valError.path)), 'v': valError.validator_value })
+				elif valError.message.find("is not valid under any of the given schemas") !=-1 and (bootstrapAttribute in valError.instance):
+					inst = valError.instance[bootstrapAttribute]
+					self.bootstrapMessages.append({ 'path': "/".join(map(lambda e: str(e),valError.path)), 'v': {"f_id": id(inst),"f_val": inst} })
+				#else:
+				#	import sys				
+				#	print("PAPAPITUFO {} {} {}".format(self.__class__.__name__,valError.message,jsonSchema['$id']),file=sys.stderr)
+				#	sys.stderr.flush()
 	
 	# This method should be used to invalidate the cached contents
 	# needed for the proper work of the extension
@@ -107,7 +114,7 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	# the information from other instances. It returns an array of ValidationErrors
 	# It is run after the forced cached warmup, and before the cleanup
 	def doSecondPass(self,l_customFeatureValidators):
-		return []
+		return set() , set() , []
 	
 	# This method should be used to share the context of the extension
 	# which is usually needed on second pass works. It must return
