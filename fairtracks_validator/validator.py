@@ -39,6 +39,7 @@ from fairtracks_validator.extensions.curie_search import CurieSearch
 from fairtracks_validator.extensions.ontology_term import OntologyTerm
 from fairtracks_validator.extensions.unique_check import UniqueKey
 from fairtracks_validator.extensions.pk_check import PrimaryKey
+from fairtracks_validator.extensions.fk_check import ForeignKey
 
 from .extend_validator import extendValidator , PLAIN_VALIDATOR_MAPPER
 
@@ -46,7 +47,8 @@ class ExtensibleValidator(object):
 	CustomBaseValidators = {
 		None: [
 			UniqueKey,
-			PrimaryKey
+			PrimaryKey,
+			ForeignKey
 		]
 	}
 	
@@ -59,15 +61,17 @@ class ExtensibleValidator(object):
 	
 	def __init__(self,customFormats=[], customTypes={}, customValidators=CustomBaseValidators, config={}):
 		self.schemaHash = {}
-		self.CustomFormatCheckerInstance = JSV.FormatChecker()
+		self.refSchemaCache = {}
+		self.customFormatCheckerInstance = JSV.FormatChecker()
 
 		# Registering the custom formats, in order to use them
 		for customFormat in customFormats:
-			self.CustomFormatCheckerInstance.checks(customFormat.FormatName)(customFormat.IsCorrectFormat)
+			self.customFormatCheckerInstance.checks(customFormat.FormatName)(customFormat.IsCorrectFormat)
 		
 		self.customTypes = customTypes
 		self.customValidators = customValidators
 		self.config = config
+		self.doNotValidateNoId = not bool(config.get('validate-no-id',True))
 	
 	@classmethod
 	def FindFKs(cls,jsonSchema,jsonSchemaURI,prefix=""):
@@ -120,8 +124,12 @@ class ExtensibleValidator(object):
 		numFileFail = 0
 		
 		if verbose:
-			print("PASS 0.a: JSON schema loading and validation")
+			print("PASS 0.a: JSON schema loading and cache generation")
 		jsonSchemaPossibles = list(args)
+		jsonSchemaNext = []
+		refSchemaCache = self.refSchemaCache = {}
+		refSchemaFile = {}
+		inlineCounter = 0
 		for jsonSchemaPossible in jsonSchemaPossibles:
 			schemaObj = None
 			
@@ -147,7 +155,10 @@ class ExtensibleValidator(object):
 				
 				schemaObj['schema_hash'] = self.GetNormalizedJSONHash(jsonSchema)
 				
-				jsonSchemaFile = schemaObj.setdefault('file','(inline)')
+				if 'file' not in schemaObj:
+					schemaObj['file'] = '(inline schema {})'.format(inlineCounter)
+					inlineCounter += 1
+				jsonSchemaFile = schemaObj['file']
 			elif os.path.isdir(jsonSchemaPossible):
 				jsonSchemaDir = jsonSchemaPossible
 				# It's a possible JSON Schema directory, not a JSON Schema file
@@ -193,13 +204,12 @@ class ExtensibleValidator(object):
 					print("\tIGNORE: {0} does not have the mandatory '{1}' attribute, so it cannot be validated".format(jsonSchemaFile,self.SCHEMA_KEY))
 				errors.append({
 					'reason': 'no_schema',
-					'description': "JSON Schema attribute '$schema' is missing"
+					'description': "JSON Schema attribute '{}' is missing".format(self.SCHEMA_KEY)
 				})
 				numFileIgnore += 1
 				continue
 			
-			plain_validator = PLAIN_VALIDATOR_MAPPER.get(schemaValId)
-			if plain_validator is None:
+			if PLAIN_VALIDATOR_MAPPER.get(schemaValId) is None:
 				if verbose:
 					print("\tIGNORE/FIXME: The JSON Schema id {0} is not being acknowledged by this validator".format(schemaValId))
 				errors.append({
@@ -212,22 +222,65 @@ class ExtensibleValidator(object):
 			# Getting the JSON Schema URI, needed by this
 			idKey = '$id'  if '$id' in jsonSchema else 'id'
 			jsonSchemaURI = jsonSchema.get(idKey)
+			if jsonSchemaURI is not None:
+				if jsonSchemaURI in refSchemaFile:
+					if verbose:
+						print("\tERROR: schema in {0} and schema in {1} have the same id".format(jsonSchemaFile,refSchemaFile[jsonSchemaURI]),file=sys.stderr)
+					errors.append({
+						'reason': 'dup_id',
+						'description': "schema in {0} and schema in {1} have the same id".format(jsonSchemaFile,refSchemaFile[jsonSchemaURI])
+					})
+					numFileFail += 1
+					continue
+				else:
+					refSchemaCache[jsonSchemaURI] = jsonSchema
+					refSchemaFile[jsonSchemaURI] = jsonSchemaFile
+			else:
+				numFileIgnore += 1
+				if verbose:
+					print("\tIGNORE: Schema in {0} has no id attribute".format(jsonSchemaFile),file=sys.stderr)
+				if self.doNotValidateNoId:
+					errors.append({
+						'reason': 'no_id',
+						'description': "JSON Schema attributes '$id' (Draft06 onward) and 'id' (Draft04) are missing in {}".format(jsonSchemaFile)
+					})
+					numFileIgnore += 1
+					continue
 			
-			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators,self.config)
+			# We need to store these before creating the validators
+			# in order to build the RefSchema cache
+			jsonSchemaNext.append(schemaObj)
+		
+		
+		if verbose:
+			print("PASS 0.b: JSON schema validation")
+		for schemaObj in jsonSchemaNext:
+			jsonSchema = schemaObj['schema']
+			jsonSchemaFile = schemaObj['file']
+			errors = schemaObj['errors']
+			
+			# Errors related to these are captured in the previous loop
+			schemaValId = jsonSchema.get(self.SCHEMA_KEY)
+			plain_validator = PLAIN_VALIDATOR_MAPPER.get(schemaValId)
+			
+			# Getting the JSON Schema URI, needed by this
+			idKey = '$id'  if '$id' in jsonSchema else 'id'
+			jsonSchemaURI = jsonSchema.get(idKey)
+			
+			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators, config=self.config)
 			schemaObj['customFormatInstances'] = customFormatInstances
 			schemaObj['validator'] = validator
 			
 			metaSchema = validator.META_SCHEMA
 			if len(customFormatInstances) > 0:
 				metaSchema = metaSchema.copy()
-				metaProps = metaSchema['properties']
-
+				metaSchema['properties'] = metaProps = metaSchema['properties'].copy()
+				
 				for customFormatInstance in customFormatInstances:
 					for kF, vF in customFormatInstance.triggerJSONSchemaDef.items():
 						if kF in metaProps:
 							# Multiple declarations
-							vM = metaProps[kF]
-							
+							vM = metaProps[kF].copy()
 							if 'anyOf' not in vM:
 								newDecl = {
 									'anyOf': [
@@ -235,12 +288,19 @@ class ExtensibleValidator(object):
 									]
 								}
 								vM = metaProps[kF] = newDecl
+							else:
+								metaProps[kF] = vM
 							
 							vM['anyOf'].append(vF)
 						else:
 							metaProps[kF] = vF
 			
-			valErrors = [ valError  for valError in validator(metaSchema).iter_errors(jsonSchema) ]
+			# We need to shadow the original schema
+			localRefSchemaCache = refSchemaCache.copy()
+			localRefSchemaCache[jsonSchemaURI] = metaSchema
+			cachedSchemasResolver = JSV.RefResolver(base_uri=jsonSchemaURI, referrer=metaSchema, store=localRefSchemaCache)
+			
+			valErrors = [ valError  for valError in validator(metaSchema,resolver = cachedSchemasResolver).iter_errors(jsonSchema) ]
 			if len(valErrors) > 0:
 				if verbose:
 					print("\t- ERRORS:\n"+"\n".join(map(lambda se: "\t\tPath: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),se.path)),se.message) , valErrors))+"\n")
@@ -301,6 +361,8 @@ class ExtensibleValidator(object):
 					p_schemaHash[jsonSchemaURI] = schemaObj
 					numFileOK += 1
 			else:
+				# This is here to capture cases where we wanted to validate an
+				# unidentified schema for its correctness
 				if verbose:
 					print("\tIGNORE: validated, but schema in {0} has no id attribute".format(jsonSchemaFile),file=sys.stderr)
 				errors.append({
@@ -312,7 +374,7 @@ class ExtensibleValidator(object):
 		if verbose:
 			print("\nSCHEMA VALIDATION STATS: loaded {0} schemas from {1} directories, ignored {2} schemas, failed {3} schemas and {4} directories".format(numFileOK,numDirOK,numFileIgnore,numFileFail,numDirFail))
 		
-			print("\nPASS 0.b: JSON schema set consistency checks")
+			print("\nPASS 0.c: JSON schema set consistency checks")
 		
 		# Now, we check whether the declared foreign keys are pointing to loaded JSON schemas
 		numSchemaConsistent = 0
@@ -364,15 +426,46 @@ class ExtensibleValidator(object):
 	
 	# This method warms up the different cached elements as much
 	# as possible, 
-	def warmUpCaches(self):
-		p_schemasObj = self.getValidSchemas()
-		
-		for schemaObj in p_schemasObj.values():
-			dynSchemaVal = schemaObj['customFormatInstances']
-			for dynVal in dynSchemaVal:
-				dynVal.warmUpCaches()
+	def warmUpCaches(self,dynValList=None,verbose=None):
+		if not dynValList:
+			dynValList = []
+			p_schemasObj = self.getValidSchemas()
+			
+			for schemaObj in p_schemasObj.values():
+				dynValList.extend(schemaObj['customFormatInstances'])
+			
+		for dynVal in dynValList:
+			dynVal.warmUpCaches()
 	
-	def _resetDynamicValidators(self,dynValList):
+	def doSecondPass(self,dynValList,verbose=None):
+		secondPassOK = 0
+		secondPassFails = 0
+		secondPassErrors = {}
+		
+		# First, gather the list of contexts
+		gatheredContexts = {}
+		for dynVal in dynValList:
+			dynContext = dynVal.getContext()
+			if dynContext is not None:
+				gatheredContexts.setdefault(dynVal.__class__.__name__,[]).append(dynContext)
+		
+		# We have to run this even when there is no gathered context
+		# because there could be validators wanting to complain
+		secondPassProcessed = set()
+		secondPassFailed = set()
+		for dynVal in dynValList:
+			processed, failed, errors = dynVal.doSecondPass(gatheredContexts)
+			secondPassProcessed.update(processed)
+			secondPassFailed.update(failed)
+			for error in errors:
+				secondPassErrors.setdefault(error['file'],[]).append(error)
+		
+		secondPassFails = len(secondPassFailed)
+		secondPassOK = len(secondPassProcessed) - secondPassFails
+		
+		return secondPassOK, secondPassFails, secondPassErrors
+	
+	def _resetDynamicValidators(self,dynValList,verbose=None):
 		for dynVal in dynValList:
 			dynVal.cleanup()
 	
@@ -529,7 +622,9 @@ class ExtensibleValidator(object):
 					jsonObj['schema_hash'] = schemaObj['schema_hash']
 					jsonObj['schema_id'] = jsonSchemaId
 					
-					valErrors = [ error  for error in validator(jsonSchema, format_checker = self.CustomFormatCheckerInstance).iter_errors(jsonDoc) ]
+					cachedSchemasResolver = JSV.RefResolver(base_uri=jsonSchemaId, referrer=jsonSchema, store=self.refSchemaCache)
+					
+					valErrors = [ error  for error in validator(jsonSchema, format_checker = self.customFormatCheckerInstance,resolver = cachedSchemasResolver).iter_errors(jsonDoc) ]
 					
 					if len(valErrors) > 0:
 						if verbose:
@@ -540,9 +635,11 @@ class ExtensibleValidator(object):
 							else:
 								schema_error_reason = 'schema_error'
 							
+							errPath = "/"+"/".join(map(lambda e: str(e),valError.path))
 							errors.append({
 								'reason': schema_error_reason,
-								'description': "Path: {0} . Message: {1}".format("/"+"/".join(map(lambda e: str(e),valError.path)),valError.message)
+								'description': "Path: {0} . Message: {1}".format(errPath,valError.message),
+								'path': errPath
 							})
 						
 						# Masking it for the next loop
@@ -552,41 +649,9 @@ class ExtensibleValidator(object):
 					else:
 						# Does the schema contain a PK declaration?
 						isValid = True
-						p_PK_def = p_schemaHash[jsonSchemaId]['pk']
-						if p_PK_def is not None:
-							p_PK = None
-							if jsonSchemaId in PKvals:
-								p_PK = PKvals[jsonSchemaId]
-							else:
-								PKvals[jsonSchemaId] = p_PK = {}
-							
-							pkValues = UniqueKey.GetKeyValues(jsonDoc,p_PK_def)
-							pkStrings = UniqueKey.GenKeyStrings(pkValues)
-							# Pass 1.a: check duplicate keys
-							for pkString in pkStrings:
-								if pkString in p_PK:
-									if verbose:
-										print("\t- PK ERROR: Duplicate PK in {0} and {1}\n".format(p_PK[pkString],jsonFile),file=sys.stderr)
-									errors.append({
-										'reason': 'dup_pk',
-										'description': "Duplicate PK in {0} and {1}\n".format(p_PK[pkString],jsonFile)
-									})
-									isValid = False
-							
-							# Pass 1.b: record keys
-							if isValid:
-								for pkString in pkStrings:
-									p_PK[pkString] = jsonFile
-							else:
-								# Masking it for the next loop if there was an error
-								report.append(jsonPossibles[iJsonPossible])
-								jsonPossibles[iJsonPossible] = None
-								numFilePass1Fail += 1
-								
-						if isValid:
-							if verbose:
-								print("\t- Validated!\n")
-							numFilePass1OK += 1
+						if verbose:
+							print("\t- Validated!\n")
+						numFilePass1OK += 1
 					
 				else:
 					if verbose:
@@ -615,107 +680,42 @@ class ExtensibleValidator(object):
 		#
 		#print Dumper(\%PKvals),"\n";
 		
-		# Second pass, check foreign keys against gathered primary keys
-		if verbose:
-			print("PASS 2: foreign keys checks")
-		#use Data::Dumper;
-		#print Dumper(@jsonFiles),"\n";
-		for jsonObj in jsonPossibles:
-			if jsonObj is None:
-				continue
-			
-			# Adding this survivor to the report
-			report.append(jsonObj)
-			
+		
+		
+		if dynSchemaValList:
+			# Second pass, check foreign keys against gathered primary keys
 			if verbose:
-				print("* Checking FK on {0}".format(jsonFile))
-			jsonDoc = jsonObj['json']
-			errors = jsonObj['errors']
-			jsonFile = jsonObj['file']
+				print("PASS 2: additional checks (foreign keys and so)")
+			self.warmUpCaches(dynSchemaValList,verbose)
+			numFilePass2OK , numFilePass2Fail , secondPassErrors = self.doSecondPass(dynSchemaValList,verbose)
+			# Reset the dynamic validators
+			self._resetDynamicValidators(dynSchemaValList,verbose)
 			
-			jsonRoot = jsonDoc['fair_tracks']  if 'fair_tracks' in jsonDoc  else jsonDoc
-			
-			jsonSchemaId = None
-			for altSchemaKey in self.ALT_SCHEMA_KEYS:
-				if altSchemaKey in jsonRoot:
-					jsonSchemaId = jsonRoot[altSchemaKey]
-					break
-			
-			if jsonSchemaId is not None:
-				if jsonSchemaId in p_schemaHash:
-					if verbose:
-						print("\t- Using {0} schema".format(jsonSchemaId))
-					
-					p_FKs = p_schemaHash[jsonSchemaId]['fk']
-					
-					isValid = True
-					#print(p_schemaHash[jsonSchemaId])
-					for p_FK_decl in p_FKs:
-						fkPkSchemaId, p_FK_def = p_FK_decl
-						
-						fkValues = UniqueKey.GetKeyValues(jsonDoc,p_FK_def)
-						
-						#print(fkValues,file=sys.stderr);
-						
-						fkStrings = UniqueKey.GenKeyStrings(fkValues)
-						
-						if len(fkStrings) > 0:
-							if fkPkSchemaId in PKvals:
-								p_PK = PKvals[fkPkSchemaId]
-								for fkString in fkStrings:
-									if fkString is not None:
-										#print STDERR "DEBUG FK ",$fkString,"\n";
-										if fkString not in p_PK:
-											if verbose:
-												print("\t- FK ERROR: Unmatching FK ({0}) in {1} to schema {2}".format(fkString,jsonFile,fkPkSchemaId),file=sys.stderr)
-											errors.append({
-												'reason': 'stale_fk',
-												'description': "Unmatching FK ({0}) in {1} to schema {2}".format(fkString,jsonFile,fkPkSchemaId)
-											})
-											isValid = False
-									#else:
-									#	use Data::Dumper;
-									#	print Dumper($p_FK_def),"\n";
-							else:
-								if verbose:
-									print("\t- FK ERROR: No available documents from {0} schema, required by {1}".format(fkPkSchemaId,jsonFile),file=sys.stderr)
-								errors.append({
-									'reason': 'dangling_fk',
-									'description': "No available documents from {0} schema, required by {1}".format(fkPkSchemaId,jsonFile)
-								})
-								
-								isValid = False
-					if isValid:
-						if verbose:
-							print("\t- Validated!")
-						numFilePass2OK += 1
-					else:
-						numFilePass2Fail += 1
-				else:
-					if verbose:
-						print("\t- ASSERTION ERROR: Skipping schema validation (schema with URI {0} not found)".format(jsonSchemaId))
-					errors.append({
-						'reason': 'schema_unknown',
-						'description': "Schema with URI {0} was not loaded".format(jsonSchemaId)
-					})
-					numFilePass2Fail += 1
-			else:
+			#use Data::Dumper;
+			#print Dumper(@jsonFiles),"\n";
+			for jsonObj in jsonPossibles:
+				if jsonObj is None:
+					continue
+				
+				# Adding this survivor to the report
+				report.append(jsonObj)
+				jsonFile = jsonObj['file']
 				if verbose:
-					print("\t- ASSERTION ERROR: Skipping schema validation (no one declared for {0})".format(jsonFile))
-				errors.append({
-					'reason': 'no_id',
-					'description': "No hint to identify the correct JSON Schema to be used to validate"
-				})
-				numFilePass2Fail += 1
-			if verbose:
-				print()
+					print("* Additional checks on {0}".format(jsonFile))
+				
+				errorList = secondPassErrors.get(jsonFile)
+				if errorList:
+					jsonObj['errors'].extend(errorList)
+					if verbose:
+						print("\t- ERRORS:")
+						print("\n".join(map(lambda e: "\t\tPath: {0} . Message: {1}".format(e['path'],e['description']), errorList)))
+				elif verbose:
+					print("\t- Validated!")
+		elif verbose:
+			print("PASS 2: (skipped)")
 		
 		if verbose:
 			print("\nVALIDATION STATS:\n\t- directories ({0} OK, {1} failed)\n\t- PASS 1 ({2} OK, {3} ignored, {4} error)\n\t- PASS 2 ({5} OK, {6} error)".format(numDirOK,numDirFail,numFilePass1OK,numFilePass1Ignore,numFilePass1Fail,numFilePass2OK,numFilePass2Fail))
-		
-		# Reset the dynamic validators
-		if dynSchemaValList:
-			self._resetDynamicValidators(dynSchemaValList)
 		
 		return report
 
@@ -736,7 +736,8 @@ class FairGTracksValidator(ExtensibleValidator):
 			CurieSearch,
 			OntologyTerm,
 			UniqueKey,
-			PrimaryKey
+			PrimaryKey,
+			ForeignKey
 		]
 	}
 	
