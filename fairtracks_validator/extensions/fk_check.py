@@ -27,8 +27,8 @@ class ForeignKey(AbstractCustomFeatureValidator):
 	DanglingFKErrorReason = 'dangling_fk'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self,schemaURI,config={}):
-		super().__init__(schemaURI,config)
+	def __init__(self,schemaURI, jsonSchemaSource='(unknown)',config={}):
+		super().__init__(schemaURI,jsonSchemaSource,config)
 		self.FKWorld = dict()
 	
 	@property
@@ -77,8 +77,9 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		return True
 	
 	def bootstrap(self, refSchemaTuple = tuple()):
-		(id2ElemId , keyList , jp2val) = refSchemaTuple
+		(id2ElemId , keyList, keyRefs) = refSchemaTuple
 		
+		errors = []
 		# Saving the unique locations
 		# based on information from FeatureLoc elems
 		for loc in keyList:
@@ -91,6 +92,12 @@ class ForeignKey(AbstractCustomFeatureValidator):
 				ref_schema_id = p_FK_decl['schema_id']
 				abs_ref_schema_id = uritools.urijoin(self.schemaURI,ref_schema_id)
 				
+				if abs_ref_schema_id not in keyRefs:
+					errors.append({
+						'reason': 'fk_no_schema',
+						'description': "No schema with {0} id, required by {1} ({2})".format(abs_ref_schema_id,self.jsonSchemaSource,self.schemaURI)
+					})
+				
 				fk_members = p_FK_decl.get('members',[])
 				fkLoc = FKLoc(schemaURI=self.schemaURI,refSchemaURI=abs_ref_schema_id,path=loc.path+'/'+str(fk_loc_i),values=list())
 				fk_id = abs_ref_schema_id
@@ -98,6 +105,8 @@ class ForeignKey(AbstractCustomFeatureValidator):
 				
 				# This control is here for same primary key referenced from multiple cases
 				fkDefH[fk_loc_id] = FKDef(fkLoc=fkLoc,members=fk_members)
+		
+		return errors
 	
 	# This step is only going to gather all the foreign keys
 	def validate(self,validator,fk_defs,value,schema):

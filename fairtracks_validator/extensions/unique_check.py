@@ -28,8 +28,8 @@ class UniqueKey(AbstractCustomFeatureValidator):
 	SchemaErrorReason = 'dup_unique'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self,schemaURI,config={}):
-		super().__init__(schemaURI,config)
+	def __init__(self,schemaURI,jsonSchemaSource='(unknown)',config={}):
+		super().__init__(schemaURI,jsonSchemaSource,config)
 		self.UniqueWorld = dict()
 	
 	@property
@@ -66,7 +66,7 @@ class UniqueKey(AbstractCustomFeatureValidator):
 		return True
 	
 	def bootstrap(self, refSchemaTuple = tuple()):
-		(id2ElemId , keyList , jp2val) = refSchemaTuple
+		(id2ElemId , keyList , _) = refSchemaTuple
 		
 		# Saving the unique locations
 		# based on information from FeatureLoc elems
@@ -82,6 +82,8 @@ class UniqueKey(AbstractCustomFeatureValidator):
 			else:
 				uDef = UniqueDef(uniqueLoc=[uLoc],members=loc.context[self.triggerAttribute],values=dict())
 				self.UniqueWorld[uId] = uDef
+		
+		return []
 		
 	JStepPat = re.compile(r"^([^\[]+)\[(0|[1-9][0-9]+)?\]$")
 

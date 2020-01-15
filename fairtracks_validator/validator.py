@@ -269,7 +269,7 @@ class ExtensibleValidator(object):
 			idKey = '$id'  if '$id' in jsonSchema else 'id'
 			jsonSchemaURI = jsonSchema.get(idKey)
 			
-			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators, config=self.config)
+			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators, config=self.config, jsonSchemaSource=jsonSchemaFile)
 			
 			schemaObj['customFormatInstances'] = customFormatInstances
 			schemaObj['validator'] = validator
@@ -336,30 +336,6 @@ class ExtensibleValidator(object):
 					triggeringFeatures = list(map(lambda cFI: cFI.triggerAttribute, customFormatInstances))
 					refSchemaSet[jsonSchemaURI] = traverseJSONSchema(jsonSchema,jsonSchemaURI,keys=triggeringFeatures)
 					
-					# Curating the primary key
-					p_PK = None
-					if 'primary_key' in jsonSchema:
-						p_PK = jsonSchema['primary_key']
-						if isinstance(p_PK,(list,tuple)):
-							for key in p_PK:
-								#if type(key) not in ALLOWED_ATOMIC_VALUE_TYPES:
-								if type(key) not in ALLOWED_KEY_TYPES:
-									if verbose:
-										print("\tWARNING: primary key in {0} is not composed by strings defining its attributes. Ignoring it".format(jsonSchemaFile),file=sys.stderr)
-									p_PK = None
-									break
-						else:
-							p_PK = None
-					
-					schemaObj['pk'] = p_PK
-					
-					# Gather foreign keys
-					FKs = self.FindFKs(jsonSchema,jsonSchemaURI)
-					
-					schemaObj['fk'] = FKs
-					
-					#print(FKs,file=sys.stderr)
-					
 					p_schemaHash[jsonSchemaURI] = schemaObj
 					numFileOK += 1
 			else:
@@ -387,7 +363,11 @@ class ExtensibleValidator(object):
 		numSchemaConsistent = 0
 		numSchemaInconsistent = 0
 		for jsonSchemaURI , p_schema in p_schemaHash.items():
+			jsonSchemaFile = p_schema['file']
+			if verbose:
+				print("* Checking {0}".format(jsonSchemaFile))
 			customFormatInstances = p_schema['customFormatInstances']
+			isValid = True
 			if len(customFormatInstances) > 0:
 				(id2ElemId , keyRefs , jp2val) = refSchemaSet[jsonSchemaURI]
 				
@@ -395,26 +375,14 @@ class ExtensibleValidator(object):
 					if cFI.triggerAttribute in keyRefs:
 						# Bootstrapping the schema
 						# By default this is a no-op
-						cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs[cFI.triggerAttribute] , jp2val))
-			
-			jsonSchemaFile = p_schema['file']
-			p_FKs = p_schema['fk']
-			if verbose:
-				print("* Checking {0}".format(jsonSchemaFile))
-			
-			isValid = True
-			for p_FK_decl in p_FKs:
-				fkPkSchemaId , p_FK_def = p_FK_decl
-				
-				if fkPkSchemaId not in p_schemaHash:
-					if verbose:
-						print("\t- FK ERROR: No schema with {0} id, required by {1} ({2})".format(fkPkSchemaId,jsonSchemaFile,jsonSchemaURI),file=sys.stderr)
-					p_schema['errors'].append({
-						'reason': 'fk_no_schema',
-						'description': "No schema with {0} id, required by {1} ({2})".format(fkPkSchemaId,jsonSchemaFile,jsonSchemaURI)
-					})
-					
-					isValid = False
+						errors = cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs[cFI.triggerAttribute] , self.refSchemaCache))
+						if errors:
+							if verbose:
+								for error in errors:
+									print("\t- ERROR: {}".format(error['description']),file=sys.stderr)
+							
+							p_schema['errors'].extend(errors)
+							isValid = False
 			
 			if isValid:
 				if verbose:

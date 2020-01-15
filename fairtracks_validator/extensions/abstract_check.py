@@ -9,8 +9,9 @@ import copy
 CheckContext = namedtuple('CheckContext',['schemaURI','context'])
 
 class AbstractCustomFeatureValidator(abc.ABC):
-	def __init__(self,schemaURI, config = {}):
+	def __init__(self,schemaURI, jsonSchemaSource='(unknown)', config = {}):
 		self.schemaURI = schemaURI
+		self.jsonSchemaSource = jsonSchemaSource
 		self.config = config
 		self.bootstrapMessages = None
 		self.currentJSONFile = '(unset)'
@@ -46,8 +47,9 @@ class AbstractCustomFeatureValidator(abc.ABC):
 		self.currentJSONFile = newVal
 	
 	# This method should be used to initialize caches
+	# and do some validations, returning errors in an array
 	def bootstrap(self, refSchemaTuple = tuple()):
-		pass
+		return []
 	
 	# This method should be used to invalidate the cached contents
 	# needed for the proper work of the extension

@@ -20,8 +20,8 @@ class PrimaryKey(UniqueKey):
 	SchemaErrorReason = 'dup_pk'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self,schemaURI,config={}):
-		super().__init__(schemaURI,config)
+	def __init__(self,schemaURI, jsonSchemaSource='(unknown)', config={}):
+		super().__init__(schemaURI,jsonSchemaSource,config)
 		self.doPopulate = False
 		self.gotIdsSet = None
 		self.warmedUp = False

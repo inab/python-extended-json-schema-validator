@@ -30,8 +30,8 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 	MatchTypeAttrName = 'matchType'
 	AncestorsAttrName = 'ancestors'
 	
-	def __init__(self,schemaURI,config={}):
-		super().__init__(schemaURI,config)
+	def __init__(self,schemaURI, jsonSchemaSource='(unknown)',config={}):
+		super().__init__(schemaURI,jsonSchemaSource,config)
 		self.ontologies = []
 	
 	@property
@@ -88,7 +88,7 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		return True
 	
 	def bootstrap(self, refSchemaTuple = tuple()):
-		(id2ElemId , keyList , jp2val) = refSchemaTuple
+		(id2ElemId , keyList , _) = refSchemaTuple
 		
 		# Saving the unique locations
 		# based on information from FeatureLoc elems
@@ -103,6 +103,8 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 				else:
 					self.ontologies.append(ontlist)
 				uIdSet.add(uId)
+		
+		return []
 	
 	def invalidateCaches(self):
 		self.InvalidateWorld()
