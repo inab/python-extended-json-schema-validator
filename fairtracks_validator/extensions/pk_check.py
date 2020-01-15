@@ -55,6 +55,11 @@ class PrimaryKey(UniqueKey):
 	def _errorReason(self):
 		return self.SchemaErrorReason
 	
+	###
+	# Bootstrapping is done by unique_check implementation
+	# which is inherited
+	###
+	
 	def warmUpCaches(self):
 		self.warmedUp = True
 		setup = self.config.get(self.KeyAttributeName)
@@ -81,7 +86,7 @@ class PrimaryKey(UniqueKey):
 								gotIds = str(f.read(),'utf-8').split()
 								if gotIds:
 									self.gotIdsSet[compURL] = gotIds
-									self.doPopulate = self.doPopulate
+									self.doPopulate = True
 					except urllib.error.HTTPError as he:
 						print("ERROR: Unable to fetch remote keys data from {0} [{1}]: {2}".format(compURL,he.code,he.reason), file=sys.stderr)
 					except urllib.error.URLError as ue:
@@ -95,13 +100,13 @@ class PrimaryKey(UniqueKey):
 		
 		# Populating before the validation itself
 		if unique_state:
+			# Needed to populate the cache of ids
+			# and the unicity check
+			unique_id = id(schema)
 			if self.doPopulate:
 				# Deactivate future populations
 				self.doPopulate = False
 				if self.gotIdsSet:
-					# Needed to populate the cache of ids
-					unique_id = id(schema)
-					
 					# The common dictionary for this declaration where all the unique values are kept
 					uniqueDef = self.UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=unique_state,values=dict()))
 					uniqueSet = uniqueDef.values
@@ -125,9 +130,6 @@ class PrimaryKey(UniqueKey):
 				theValues = [ obtainedValues[0][0] ]
 			else:
 				theValues = self.GenKeyStrings(obtainedValues)
-			
-			# Check the unicity
-			unique_id = id(schema)
 			
 			# The common dictionary for this declaration where all the unique values are kept
 			uniqueDef = self.UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=unique_state,values=dict()))

@@ -65,22 +65,24 @@ class UniqueKey(AbstractCustomFeatureValidator):
 	def needsBootstrapping(self):
 		return True
 	
-	def bootstrap(self, metaSchemaURI, jsonSchema):
-		super().bootstrap(metaSchemaURI,jsonSchema)
+	def bootstrap(self, refSchemaTuple = tuple()):
+		(id2ElemId , keyList , jp2val) = refSchemaTuple
 		
 		# Saving the unique locations
-		for loc in self.bootstrapMessages:
-			uLoc = UniqueLoc(schemaURI=self.schemaURI,path=loc['path'])
-			uId = loc['v']['f_id']
+		# based on information from FeatureLoc elems
+		for loc in keyList:
+			uLoc = UniqueLoc(schemaURI=loc.schemaURI,path=loc.path)
+			uId = id(loc.context)
+			
 			uDef = self.UniqueWorld.get(uId)
 			
 			# This control is here for multiple inheritance cases
 			if uDef is not None:
 				uDef.uniqueLoc.append(uLoc)
 			else:
-				uDef = UniqueDef(uniqueLoc=[uLoc],members=loc['v']['f_val'],values=dict())
+				uDef = UniqueDef(uniqueLoc=[uLoc],members=loc.context[self.triggerAttribute],values=dict())
 				self.UniqueWorld[uId] = uDef
-	
+		
 	JStepPat = re.compile(r"^([^\[]+)\[(0|[1-9][0-9]+)?\]$")
 
 	@classmethod
@@ -175,6 +177,9 @@ class UniqueKey(AbstractCustomFeatureValidator):
 
 	def validate(self,validator,unique_state,value,schema):
 		if unique_state:
+			# Check the unicity
+			unique_id = id(schema)
+			
 			if isinstance(unique_state,list):
 				obtainedValues = self.GetKeyValues(value,unique_state)
 			else:
@@ -186,9 +191,6 @@ class UniqueKey(AbstractCustomFeatureValidator):
 				theValues = [ obtainedValues[0][0] ]
 			else:
 				theValues = self.GenKeyStrings(obtainedValues)
-			
-			# Check the unicity
-			unique_id = id(schema)
 			
 			# The common dictionary for this declaration where all the unique values are kept
 			uniqueDef = self.UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=unique_state,values=dict()))
@@ -205,4 +207,7 @@ class UniqueKey(AbstractCustomFeatureValidator):
 		return CheckContext(schemaURI = self.schemaURI, context = self.UniqueWorld)
 	
 	def cleanup(self):
-		self.UniqueWorld = dict()
+		# In order to not destroying the bootstrapping work
+		# only remove the recorded values
+		for uDef in self.UniqueWorld.values():
+			uDef.values.clear()
