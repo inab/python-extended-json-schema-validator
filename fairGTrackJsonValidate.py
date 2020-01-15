@@ -31,16 +31,20 @@ if sys.version_info[0] == 2:
 
 # From http://stackoverflow.com/a/3678114
 def disable_outerr_buffering():
-	# Appending to gc.garbage is a way to stop an object from being
-	# destroyed.  If the old sys.stdout is ever collected, it will
-	# close() stdout, which is not good.
-	# gc.garbage.append(sys.stdout)
-	sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
-	# gc.garbage.append(sys.stderr)
-	sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 0)
+	if sys.version_info[0] == 2:
+		# Appending to gc.garbage is a way to stop an object from being
+		# destroyed.  If the old sys.stdout is ever collected, it will
+		# close() stdout, which is not good.
+		# gc.garbage.append(sys.stdout)
+		sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+		# gc.garbage.append(sys.stderr)
+		sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 0)
+	else:
+		import io
+		sys.stdout = io.TextIOWrapper(open(sys.stdout.fileno(), 'wb', 0), write_through=True)
+		sys.stderr = io.TextIOWrapper(open(sys.stderr.fileno(), 'wb', 0), write_through=True)
 
-if sys.version_info[0] == 2:
-	disable_outerr_buffering()
+disable_outerr_buffering()
 
 from fairtracks_validator.validator import FairGTracksValidator
 
