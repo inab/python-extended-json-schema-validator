@@ -18,7 +18,7 @@ import json
 import uritools
 
 FKLoc = namedtuple('FKLoc',['schemaURI','refSchemaURI','path','values'])
-FKDef = namedtuple('FKDef',['fkLocH','members'])
+FKDef = namedtuple('FKDef',['fkLoc','members'])
 FKVal = namedtuple('FKVal',['value','where'])
 
 class ForeignKey(AbstractCustomFeatureValidator):
@@ -76,35 +76,33 @@ class ForeignKey(AbstractCustomFeatureValidator):
 	def needsSecondPass(self):
 		return True
 	
-	def bootstrap(self, metaSchemaURI, jsonSchema):
-		super().bootstrap(metaSchemaURI,jsonSchema)
+	def bootstrap(self, refSchemaTuple = tuple()):
+		(id2ElemId , keyList , jp2val) = refSchemaTuple
 		
 		# Saving the unique locations
-		for loc in self.bootstrapMessages:
-			fk_defs = loc['v']['f_val']
-			fk_defs_gid = str(loc['v']['f_id'])
+		# based on information from FeatureLoc elems
+		for loc in keyList:
+			fk_defs = loc.context[self.triggerAttribute]
+			fk_defs_gid = str(id(loc.context))
+			
+			#fk_defs_gid = loc.path
 			for fk_loc_i, p_FK_decl in enumerate(fk_defs):
 				fk_loc_id = fk_defs_gid + '_' + str(fk_loc_i)
 				ref_schema_id = p_FK_decl['schema_id']
 				abs_ref_schema_id = uritools.urijoin(self.schemaURI,ref_schema_id)
 				
 				fk_members = p_FK_decl.get('members',[])
-				fkLoc = FKLoc(schemaURI=self.schemaURI,refSchemaURI=abs_ref_schema_id,path=loc['path'],values=list())
-				# fk_id = id(p_FK_decl)  # loc['v']['f_id']
+				fkLoc = FKLoc(schemaURI=self.schemaURI,refSchemaURI=abs_ref_schema_id,path=loc.path+'/'+str(fk_loc_i),values=list())
 				fk_id = abs_ref_schema_id
-				fkDef = self.FKWorld.get(fk_id)
+				fkDefH = self.FKWorld.setdefault(fk_id,{})
 				
-				# This control is here for multiple inheritance cases
-				if fkDef is not None:
-					fkDef.fkLocH[fk_loc_id] = fkLoc
-				else:
-					fkDef = FKDef(fkLocH={fk_loc_id : fkLoc},members=fk_members)
-					self.FKWorld[fk_id] = fkDef
+				# This control is here for same primary key referenced from multiple cases
+				fkDefH[fk_loc_id] = FKDef(fkLoc=fkLoc,members=fk_members)
 	
 	# This step is only going to gather all the foreign keys
 	def validate(self,validator,fk_defs,value,schema):
 		if fk_defs and isinstance(fk_defs,(list,tuple)):
-			fk_defs_gid = str(id(fk_defs))
+			fk_defs_gid = str(id(schema))
 			for fk_loc_i, p_FK_decl in enumerate(fk_defs):
 				fk_loc_id = fk_defs_gid + '_' + str(fk_loc_i)
 				ref_schema_id = p_FK_decl['schema_id']
@@ -128,10 +126,9 @@ class ForeignKey(AbstractCustomFeatureValidator):
 				fk_id = abs_ref_schema_id
 				
 				# The common dictionary for this declaration where all the FK values are kept
+				fkDef = self.FKWorld.setdefault(fk_id,{}).setdefault(fk_loc_id,FKDef(fkLoc=FKLoc(schemaURI=self.schemaURI,refSchemaURI=abs_ref_schema_id,path='(unknown {})'.format(fk_loc_id),values=list()),members=fk_members))
 				
-				fkDef = self.FKWorld.setdefault(fk_id,FKDef(fkLocH={},members=fk_members))
-				
-				fkLoc = fkDef.fkLocH.setdefault(fk_loc_id,FKLoc(schemaURI=self.schemaURI,refSchemaURI=abs_ref_schema_id,path='(unknown {})'.format(fk_loc_id),values=list()))
+				fkLoc = fkDef.fkLoc
 				
 				fkVals = fkLoc.values
 				
@@ -153,8 +150,9 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		# Now, at last, check!!!!!!!
 		uniqueWhere = set()
 		uniqueFailedWhere = set()
-		for refSchemaURI,fkDef in self.FKWorld.items():
-			for fkLoc in fkDef.fkLocH.values():
+		for refSchemaURI,fkDefH in self.FKWorld.items():
+			for fk_loc_id,fkDef in fkDefH.items():
+				fkLoc = fkDef.fkLoc
 				fkPath = fkLoc.path
 				if refSchemaURI in pkContextsHash:
 					checkValues = list(pkContextsHash[refSchemaURI].values())
@@ -190,4 +188,8 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		return uniqueWhere,uniqueFailedWhere,errors
 	
 	def cleanup(self):
-		self.FKWorld = dict()
+		# In order to not destroying the bootstrapping work
+		# only remove the recorded values
+		for fkDefH in self.FKWorld.values():
+			for fkDef in fkDefH.values():
+				fkDef.fkLoc.values.clear()
