@@ -87,14 +87,15 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 	def needsBootstrapping(self):
 		return True
 	
-	def bootstrap(self, metaSchemaURI, jsonSchema):
-		super().bootstrap(metaSchemaURI,jsonSchema)
+	def bootstrap(self, refSchemaTuple = tuple()):
+		(id2ElemId , keyList , jp2val) = refSchemaTuple
 		
 		# Saving the unique locations
+		# based on information from FeatureLoc elems
 		uIdSet = set()
-		for loc in self.bootstrapMessages:
-			uId = loc['v']['f_id']
-			ontlist = loc['v']['f_val']
+		for loc in keyList:
+			uId = id(loc.context)
+			ontlist = loc.context[self.triggerAttribute]
 			
 			if uId not in uIdSet:
 				if isinstance(ontlist,list):
