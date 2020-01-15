@@ -41,7 +41,7 @@ from fairtracks_validator.extensions.unique_check import UniqueKey
 from fairtracks_validator.extensions.pk_check import PrimaryKey
 from fairtracks_validator.extensions.fk_check import ForeignKey
 
-from .extend_validator import extendValidator , PLAIN_VALIDATOR_MAPPER
+from .extend_validator import extendValidator , traverseJSONSchema , PLAIN_VALIDATOR_MAPPER
 
 class ExtensibleValidator(object):
 	CustomBaseValidators = {
@@ -62,6 +62,7 @@ class ExtensibleValidator(object):
 	def __init__(self,customFormats=[], customTypes={}, customValidators=CustomBaseValidators, config={}):
 		self.schemaHash = {}
 		self.refSchemaCache = {}
+		self.refSchemaSet = {}
 		self.customFormatCheckerInstance = JSV.FormatChecker()
 
 		# Registering the custom formats, in order to use them
@@ -129,6 +130,7 @@ class ExtensibleValidator(object):
 		jsonSchemaNext = []
 		refSchemaCache = self.refSchemaCache = {}
 		refSchemaFile = {}
+		refSchemaSet = self.refSchemaSet = {}
 		inlineCounter = 0
 		for jsonSchemaPossible in jsonSchemaPossibles:
 			schemaObj = None
@@ -268,9 +270,11 @@ class ExtensibleValidator(object):
 			jsonSchemaURI = jsonSchema.get(idKey)
 			
 			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators, config=self.config)
+			
 			schemaObj['customFormatInstances'] = customFormatInstances
 			schemaObj['validator'] = validator
 			
+			# Validate the extended JSON schema properly
 			metaSchema = validator.META_SCHEMA
 			if len(customFormatInstances) > 0:
 				metaSchema = metaSchema.copy()
@@ -328,11 +332,9 @@ class ExtensibleValidator(object):
 					if verbose:
 						print("\t- Validated {0}".format(jsonSchemaURI))
 					
-					if len(customFormatInstances) > 0:
-						for cFI in customFormatInstances:
-							# Bootstrapping the schema
-							# By default this is a no-op
-							cFI.bootstrap(schemaValId, jsonSchema)
+					# Reverse mappings, needed later
+					triggeringFeatures = list(map(lambda cFI: cFI.triggerAttribute, customFormatInstances))
+					refSchemaSet[jsonSchemaURI] = traverseJSONSchema(jsonSchema,jsonSchemaURI,keys=triggeringFeatures)
 					
 					# Curating the primary key
 					p_PK = None
@@ -371,15 +373,30 @@ class ExtensibleValidator(object):
 				})
 				numFileIgnore += 1
 		
+		
 		if verbose:
 			print("\nSCHEMA VALIDATION STATS: loaded {0} schemas from {1} directories, ignored {2} schemas, failed {3} schemas and {4} directories".format(numFileOK,numDirOK,numFileIgnore,numFileFail,numDirFail))
 		
 			print("\nPASS 0.c: JSON schema set consistency checks")
 		
+		# TODO: augment refSchemaSet id2ElemId and keyRefs with
+		# referenced schemas id2ElemId and keyRefs
+		
+		# Last, bootstrapping the extensions
 		# Now, we check whether the declared foreign keys are pointing to loaded JSON schemas
 		numSchemaConsistent = 0
 		numSchemaInconsistent = 0
 		for jsonSchemaURI , p_schema in p_schemaHash.items():
+			customFormatInstances = p_schema['customFormatInstances']
+			if len(customFormatInstances) > 0:
+				(id2ElemId , keyRefs , jp2val) = refSchemaSet[jsonSchemaURI]
+				
+				for cFI in customFormatInstances:
+					if cFI.triggerAttribute in keyRefs:
+						# Bootstrapping the schema
+						# By default this is a no-op
+						cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs[cFI.triggerAttribute] , jp2val))
+			
 			jsonSchemaFile = p_schema['file']
 			p_FKs = p_schema['fk']
 			if verbose:
