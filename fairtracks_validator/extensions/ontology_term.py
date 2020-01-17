@@ -13,8 +13,12 @@ import sys
 import tempfile
 import shutil
 import atexit
+import hashlib
+
+import json
 
 from .abstract_check import AbstractCustomFeatureValidator
+from ..downloader import download_file
 
 class OntologyTerm(AbstractCustomFeatureValidator):
 	VALID_MATCHES = {
@@ -110,73 +114,161 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		self.InvalidateWorld()
 	
 	def warmUpCaches(self):
-		w = self.GetWorld()
 		for ontology in self.ontologies:
-			onto = w.get_ontology(ontology).load()
-			w.save()
-			# Only activate this if you want a copy of the ontology,
-			# but it fires revalidations everytime!
-			#onto.save()
+			self.GetOntology(ontology)
 	
 	@classmethod
-	def GetWorldDBPath(cls):
-		if not hasattr(cls,'TermWorldPath'):
-			doTempDir = False
-			try:
-				cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
-				# Is the directory writable?
-				if not os.access(cachePath,os.W_OK):
-					doTempDir = True
-			except OSError as e:
-				# As it was not possible to create the
-				# directory at the cache path, go to the
-				# temporary directory
+	def GetCachePath(cls):
+		doTempDir = False
+		cachePath = None
+		try:
+			cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
+			# Is the directory writable?
+			if not os.access(cachePath,os.W_OK):
 				doTempDir = True
+		except OSError as e:
+			# As it was not possible to create the
+			# directory at the cache path, go to the
+			# temporary directory
+			doTempDir = True
+		
+		if doTempDir:
+			# The temporary directory should be
+			# removed when the application using this
+			# class finishes
+			#cachePath = tempfile.mkdtemp(prefix="term", suffix="cache")
+			#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
+			cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
+			os.makedirs(cachePath, exist_ok=True)
+		
+		return cachePath
+	
+	@classmethod
+	def GetMetadataPath(cls,iri_hash):
+		if not hasattr(cls,'MetadataPaths'):
+			setattr(cls,'MetadataPaths',{})
+		
+		MetadataPaths = getattr(cls,'MetadataPaths')
+		
+		metadataPath = MetadataPaths.get(iri_hash)
+		if metadataPath is None:
+			cachePath = cls.GetCachePath()
 			
-			if doTempDir:
-				# The temporary directory should be
-				# removed when the application using this
-				# class finishes
-				#cachePath = tempfile.mkdtemp(prefix="term", suffix="cache")
-				#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
-				cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
-				os.makedirs(cachePath, exist_ok=True)
+			metadataPath = os.path.join(cachePath,'metadata_{0}.json'.format(iri_hash))
+			MetadataPaths[iri_hash] = metadataPath
 		
-			setattr(cls,'TermWorldPath',os.path.join(cachePath,'owlready2.sqlite3'))
-		
-		return getattr(cls,'TermWorldPath')
+		return metadataPath
 	
 	@classmethod
-	def InvalidateWorld(cls):
+	def GetWorldDBPath(cls,iri_hash):
+		if not hasattr(cls,'TermWorldsPaths'):
+			setattr(cls,'TermWorldsPaths',{})
+		
+		TermWorldsPaths = getattr(cls,'TermWorldsPaths')
+		
+		termWorldPath = TermWorldsPaths.get(iri_hash)
+		if termWorldPath is None:
+			cachePath = cls.GetCachePath()
+			
+			termWorldPath = os.path.join(cachePath,'owlready2_{0}.sqlite3'.format(iri_hash))
+			TermWorldsPaths[iri_hash] = termWorldPath
+		
+		return termWorldPath
+	
+	@classmethod
+	def GetOntologyPath(cls,iri_hash):
+		cachePath = cls.GetCachePath()
+		
+		ontologyPath = os.path.join(cachePath,'ontology_{0}.owl'.format(iri_hash))
+		
+		return ontologyPath
+	
+	@classmethod
+	def InvalidateWorld(cls,iri):
 		# First, close the world and dispose its instance
-		if hasattr(cls,'TermWorld'):
-			w = getattr(cls,'TermWorld')
-			w.close()
-			del w
-			delattr(cls,'TermWorld')
-		
-		# Then, remove the world database
-		worldDBPath = cls.GetWorldDBPath()
-		delattr(cls,'TermWorldPath')
-		if os.path.exists(worldDBPath):
-			os.unlink(worldDBPath)
+		if hasattr(cls,'TermWorlds'):
+			TermWorlds = getattr(cls,'TermWorlds')
+			iri_hash = hashlib.sha1(iri.encode('utf-8')).hexdigest()
+			
+			w = TermWorlds.pop(iri_hash)
+			if w:
+				w.close()
+				del w
+			
+			# Then, remove the metadata
+			MetadataPaths = getattr(cls,'MetadataPaths',{})
+			metadataPath = MetadataPaths.pop(iri_hash)
+			if metadataPath and os.path.exists(metadataPath):
+				os.unlink(metadataPath)
+			
+			# Last, remove the world database
+			TermWorldsPaths = getattr(cls,'TermWorldsPaths',{})
+			worldDBPath = TermWorldsPaths.pop(iri_hash)
+			if worldDBPath and os.path.exists(worldDBPath):
+				os.unlink(worldDBPath)
+			
+			ontologyPath = cls.GetOntologyPath(iri_hash)
+			if os.path.exists(ontologyPath):
+				os.unlink(ontologyPath)
 	
 	@classmethod
-	def GetWorld(cls):
-		if not hasattr(cls,'TermWorld'):
-			worldDBPath = cls.GetWorldDBPath()
+	def GetOntology(cls,iri,doReasoner=False):
+		iri_hash = hashlib.sha1(iri.encode('utf-8')).hexdigest()
+		if not hasattr(cls,'TermWorlds'):
+			setattr(cls,'TermWorlds',{})
+		
+		TermWorlds = getattr(cls,'TermWorlds')
+		worldDB = TermWorlds.get(iri_hash)
+		
+		if worldDB is None:
+			worldDBPath = cls.GetWorldDBPath(iri_hash)
 			
 			# Activate this only if you want to save a copy of the ontologies
 			#ontologiesPath = os.path.join(cachePath,'ontologies')
 			#os.makedirs(ontologiesPath,exist_ok=True)
 			#owlready2.onto_path.append(ontologiesPath)
-			setattr(cls,'TermWorld',owlready2.World(filename=worldDBPath, exclusive=False))
+			worldDB = owlready2.World(filename=worldDBPath, exclusive=False)
+			TermWorlds[iri_hash] = worldDB
 		
-		return getattr(cls,'TermWorld')
+		# Trying to get the metadata useful for an optimal ontology download
+		metadataPath = cls.GetMetadataPath(iri_hash)
+		if os.path.exists(metadataPath):
+			try:
+				with open(metadataPath,mode='r',encoding='utf-8') as metadata_fh:
+					metadata = json.load(metadata_fh)
+			except:
+				# A corrupted cache should not disturb
+				metadata = {}
+		else:
+			metadata = {}
+		
+		ontologyPath = cls.GetOntologyPath(iri_hash)
+		gotPath,gotMetadata = download_file(iri,ontologyPath,metadata)
+		if gotPath:
+			gotMetadata['orig_url'] = iri
+			# Reading the ontology
+			with open(ontologyPath,mode="rb") as onto_fh:
+				onto = worldDB.get_ontology(iri).load(fileobj=onto_fh,reload=True)
+			
+			worldDB.save()
+			# Save the metadata
+			with open(metadataPath,mode="w",encoding="utf-8") as metadata_fh:
+				json.dump(gotMetadata,metadata_fh)
+			
+			# Re-save once the reasoner has run
+			if doReasoner:
+				owlready2.sync_reasoner(onto)
+				worldDB.save()
+		else:
+			onto = worldDB.get_ontology(iri).load()
+		
+		# And now unlink the ontology (if exists)
+		if os.path.exists(ontologyPath):
+			os.unlink(ontologyPath)
+		
+		return onto
 	
 	def isValid(self,validator,ontlist,term,schema):
-		w = self.GetWorld()
-		
 		# Getting the potential parents
 		ancestors = schema.get(self.AncestorsAttrName,[])
 		partialMatches = str(schema.get(self.MatchTypeAttrName,'exact'))
@@ -201,11 +293,7 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		isValid = False
 		invalidAncestors = False
 		for ontology in ontlist:
-			onto = w.get_ontology(ontology).load()
-			w.save()
-			# Only activate this if you want a copy of the ontology,
-			# but it fires revalidations everytime!
-			#onto.save()
+			onto = self.GetOntology(ontology)
 			
 			foundTerms = onto.search(**queryParams)
 			# Is the term findable with these conditions?
