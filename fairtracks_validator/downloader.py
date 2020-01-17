@@ -59,6 +59,7 @@ def download_file(url, local_filename, local_stats={}):
 		down_sha1 = h.hexdigest()
 		
 		# Should we check whether it is different?
+		down_mtime = None
 		if tmp_file:
 			if 'sha1' in local_stats:
 				isNewer = local_stats['sha1'] != down_sha1
@@ -72,7 +73,6 @@ def download_file(url, local_filename, local_stats={}):
 				with open(down_filename,mode='wb') as _:
 					pass
 			else:
-				down_mtime = None
 				local_filename = None
 		
 		if (local_filename is not None) and ('Last-Modified' in got_headers):
