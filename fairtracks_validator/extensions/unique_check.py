@@ -66,8 +66,9 @@ class UniqueKey(AbstractCustomFeatureValidator):
 		return True
 	
 	def bootstrap(self, refSchemaTuple = tuple()):
-		(id2ElemId , keyList , _) = refSchemaTuple
+		(id2ElemId , keyRefs , _) = refSchemaTuple
 		
+		keyList = keyRefs[self.triggerAttribute]
 		# Saving the unique locations
 		# based on information from FeatureLoc elems
 		for loc in keyList:
@@ -78,9 +79,9 @@ class UniqueKey(AbstractCustomFeatureValidator):
 			
 			# This control is here for multiple inheritance cases
 			if uDef is not None:
-				uDef.uniqueLoc.append(uLoc)
+				uDef.uniqueLoc = uLoc
 			else:
-				uDef = UniqueDef(uniqueLoc=[uLoc],members=loc.context[self.triggerAttribute],values=dict())
+				uDef = UniqueDef(uniqueLoc=uLoc,members=loc.context[self.triggerAttribute],values=dict())
 				self.UniqueWorld[uId] = uDef
 		
 		return []
