@@ -32,13 +32,14 @@ def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidator
 			dynamicValidator = dynamicValidatorClass(schemaURI,jsonSchemaSource,config)
 			customValidatorsInstances.append(dynamicValidator)
 			
-			if dynamicValidator.triggerAttribute in instancedCustomValidators:
-				raise AssertionError("FATAL: Two custom validators are using the same triggering attribute: {}".format(dynamicValidator.triggerAttribute))
-			
-			# The method must exist, and accept the parameters
-			# declared on next documentation
-			# https://python-jsonschema.readthedocs.io/en/stable/creating/
-			instancedCustomValidators[dynamicValidator.triggerAttribute] = dynamicValidator.validate
+			for triggerAttribute,triggeredValidation in dynamicValidator.getValidators():
+				if triggerAttribute in instancedCustomValidators:
+					raise AssertionError("FATAL: Two custom validators are using the same triggering attribute: {}".format(triggerAttribute))
+				
+				# The method must exist, and accept the parameters
+				# declared on next documentation
+				# https://python-jsonschema.readthedocs.io/en/stable/creating/
+				instancedCustomValidators[triggerAttribute] = triggeredValidation
 	else:
 		instancedCustomValidators = inputCustomValidators
 	
@@ -101,7 +102,7 @@ def traverseJSONSchema(jsonObj, schemaURI, keys=set()):
 			if k in keySet:
 				# Saving the correspondence from Python address
 				# to unique id of the feature
-				id2ElemId.setdefault(theId,{})[k] = elemId
+				id2ElemId.setdefault(theId,{})[k] = [ elemId ]
 				keyRefs.setdefault(k,[]).append(FeatureLoc(schemaURI=schemaURI,path=elemPath,context=j,id=elemId))
 			
 			if isinstance(v,dict):

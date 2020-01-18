@@ -40,8 +40,9 @@ from fairtracks_validator.extensions.ontology_term import OntologyTerm
 from fairtracks_validator.extensions.unique_check import UniqueKey
 from fairtracks_validator.extensions.pk_check import PrimaryKey
 from fairtracks_validator.extensions.fk_check import ForeignKey
+from fairtracks_validator.extensions.foreign_property_check import ForeignProperty
 
-from .extend_validator import extendValidator , traverseJSONSchema , PLAIN_VALIDATOR_MAPPER
+from .extend_validator import extendValidator , traverseJSONSchema , PLAIN_VALIDATOR_MAPPER , REF_FEATURE
 
 class ExtensibleValidator(object):
 	CustomBaseValidators = {
@@ -333,7 +334,10 @@ class ExtensibleValidator(object):
 						print("\t- Validated {0}".format(jsonSchemaURI))
 					
 					# Reverse mappings, needed later
-					triggeringFeatures = list(map(lambda cFI: cFI.triggerAttribute, customFormatInstances))
+					triggeringFeatures = []
+					for cFI in customFormatInstances:
+						for triggerAttribute,_ in cFI.getValidators():
+							triggeringFeatures.append(triggerAttribute)
 					refSchemaSet[jsonSchemaURI] = traverseJSONSchema(jsonSchema,jsonSchemaURI,keys=triggeringFeatures)
 					
 					p_schemaHash[jsonSchemaURI] = schemaObj
@@ -355,8 +359,36 @@ class ExtensibleValidator(object):
 		
 			print("\nPASS 0.c: JSON schema set consistency checks")
 		
-		# TODO: augment refSchemaSet id2ElemId and keyRefs with
-		# referenced schemas id2ElemId and keyRefs
+		# BUGME: no circular references check is still in place
+		for jsonSchemaURI , jsonSchemaSet in refSchemaSet.items():
+			id2ElemId , keyRefs , jp2val = jsonSchemaSet
+			# TODO: augment refSchemaSet id2ElemId and keyRefs with
+			# referenced schemas id2ElemId and keyRefs
+			refList = keyRefs.get(REF_FEATURE,[])
+			for fLoc in refList:
+				theRef = fLoc.context[REF_FEATURE]
+				# Computing the absolute schema URI
+				if uritools.isabsuri(jsonSchemaURI):
+					abs_ref_schema_id , _ = uritools.uridefrag(uritools.urijoin(jsonSchemaURI,theRef))
+				else:
+					abs_ref_schema_id , _ = uritools.uridefrag(uritools.urijoin(jsonSchemaURI,theRef))
+				
+				# Now, time to get the referenced, gathered data
+				refSet = refSchemaSet.get(abs_ref_schema_id)
+				if refSet is not None:
+					ref_id2ElemId , ref_keyRefs , ref_jp2val = refSet
+					
+					# This is needed to have a proper bootstrap
+					for ref_pAddr_k, ref_pAddr_v in ref_id2ElemId.items():
+						for ref_feat_k , ref_feat_v in ref_pAddr_v.items():
+							id2ElemId.setdefault(ref_pAddr_k,{}).setdefault(ref_feat_k,[]).extend(ref_feat_v)
+					
+					for ref_kR_k , ref_kR_v in ref_keyRefs.items():
+						keyRefs.setdefault(ref_kR_k,[]).extend(ref_kR_v)
+						
+				else:
+					# TODO: error handling
+					print("UNHANDLED ERROR",file=sys.stderr)
 		
 		# Last, bootstrapping the extensions
 		# Now, we check whether the declared foreign keys are pointing to loaded JSON schemas
@@ -372,10 +404,15 @@ class ExtensibleValidator(object):
 				(id2ElemId , keyRefs , jp2val) = refSchemaSet[jsonSchemaURI]
 				
 				for cFI in customFormatInstances:
-					if cFI.triggerAttribute in keyRefs:
+					doBootstrap = False
+					for triggerAttribute,_ in cFI.getValidators():
+						if triggerAttribute in keyRefs:
+							doBootstrap =True
+					
+					if doBootstrap:
 						# Bootstrapping the schema
 						# By default this is a no-op
-						errors = cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs[cFI.triggerAttribute] , self.refSchemaCache))
+						errors = cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs , self.refSchemaCache))
 						if errors:
 							if verbose:
 								for error in errors:
@@ -700,7 +737,7 @@ class ExtensibleValidator(object):
 			print("PASS 2: (skipped)")
 		
 		if verbose:
-			print("\nVALIDATION STATS:\n\t- directories ({0} OK, {1} failed)\n\t- PASS 1 ({2} OK, {3} ignored, {4} error)\n\t- PASS 2 ({5} OK, {6} error)".format(numDirOK,numDirFail,numFilePass1OK,numFilePass1Ignore,numFilePass1Fail,numFilePass2OK,numFilePass2Fail))
+			print("\nVALIDATION STATS:\n\t- directories ({0} OK, {1} failed)\n\t- File PASS 1 ({2} OK, {3} ignored, {4} error)\n\t- File PASS 2 ({5} OK, {6} error)".format(numDirOK,numDirFail,numFilePass1OK,numFilePass1Ignore,numFilePass1Fail,numFilePass2OK,numFilePass2Fail))
 		
 		return report
 
@@ -722,7 +759,8 @@ class FairGTracksValidator(ExtensibleValidator):
 			OntologyTerm,
 			UniqueKey,
 			PrimaryKey,
-			ForeignKey
+			ForeignKey,
+			ForeignProperty
 		]
 	}
 	
