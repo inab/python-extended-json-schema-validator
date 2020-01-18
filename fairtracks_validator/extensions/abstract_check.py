@@ -25,9 +25,10 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	def triggerAttribute(self):
 		pass
 	
-	@property
-	def bootstrapAttribute(self):
-		return self.triggerAttribute
+	# It returns the list of validation methods,
+	# along with the attributes to be hooked to
+	def getValidators(self):
+		return [(self.triggerAttribute,self.validate)]
 	
 	@property
 	@abc.abstractmethod
