@@ -45,6 +45,7 @@ class ForeignKey(AbstractCustomFeatureValidator):
 					"properties": {
 						"schema_id": {
 							"type": "string",
+							"format": "uri-reference",
 							"minLength": 1
 						},
 						"members": {
@@ -77,8 +78,9 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		return True
 	
 	def bootstrap(self, refSchemaTuple = tuple()):
-		(id2ElemId , keyList, keyRefs) = refSchemaTuple
+		(id2ElemId , keyRefs , refSchemaCache) = refSchemaTuple
 		
+		keyList = keyRefs[self.triggerAttribute]
 		errors = []
 		# Saving the unique locations
 		# based on information from FeatureLoc elems
@@ -90,9 +92,12 @@ class ForeignKey(AbstractCustomFeatureValidator):
 			for fk_loc_i, p_FK_decl in enumerate(fk_defs):
 				fk_loc_id = fk_defs_gid + '_' + str(fk_loc_i)
 				ref_schema_id = p_FK_decl['schema_id']
-				abs_ref_schema_id = uritools.urijoin(self.schemaURI,ref_schema_id)
+				if uritools.isabsuri(self.schemaURI):
+					abs_ref_schema_id = uritools.urijoin(self.schemaURI,ref_schema_id)
+				else:
+					abs_ref_schema_id = ref_schema_id
 				
-				if abs_ref_schema_id not in keyRefs:
+				if abs_ref_schema_id not in refSchemaCache:
 					errors.append({
 						'reason': 'fk_no_schema',
 						'description': "No schema with {0} id, required by {1} ({2})".format(abs_ref_schema_id,self.jsonSchemaSource,self.schemaURI)
@@ -115,7 +120,10 @@ class ForeignKey(AbstractCustomFeatureValidator):
 			for fk_loc_i, p_FK_decl in enumerate(fk_defs):
 				fk_loc_id = fk_defs_gid + '_' + str(fk_loc_i)
 				ref_schema_id = p_FK_decl['schema_id']
-				abs_ref_schema_id = uritools.urijoin(self.schemaURI,ref_schema_id)
+				if uritools.isabsuri(self.schemaURI):
+					abs_ref_schema_id = uritools.urijoin(self.schemaURI,ref_schema_id)
+				else:
+					abs_ref_schema_id = ref_schema_id
 				
 				fk_members = p_FK_decl.get('members',[])
 				if isinstance(fk_members,list):
