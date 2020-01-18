@@ -162,7 +162,14 @@ class ForeignKey(AbstractCustomFeatureValidator):
 			# This instance is only interested in primary keys
 			if className == PrimaryKey.__name__:
 				for pkContext in pkContexts:
-					pkContextsHash[pkContext.schemaURI] = pkContext.context
+					# Getting the path correspondence
+					for pkDef in pkContext.context.values():
+						pkLoc = pkDef.uniqueLoc
+						# As there can be nested keys from other schemas
+						# ignore the schemaURI from the context, and use
+						# the one in the unique location
+						pkVals = pkContextsHash.setdefault(pkLoc.schemaURI,[])
+						pkVals.append(pkDef.values)
 		
 		# Now, at last, check!!!!!!!
 		uniqueWhere = set()
@@ -171,15 +178,15 @@ class ForeignKey(AbstractCustomFeatureValidator):
 			for fk_loc_id,fkDef in fkDefH.items():
 				fkLoc = fkDef.fkLoc
 				fkPath = fkLoc.path
-				if refSchemaURI in pkContextsHash:
-					checkValues = list(pkContextsHash[refSchemaURI].values())
+				checkValuesList = pkContextsHash.get(refSchemaURI)
+				if checkValuesList is not None:
 					for fkVal in fkLoc.values:
 						uniqueWhere.add(fkVal.where)
 						
 						fkString = fkVal.value
 						found = False
-						for checkValuesSingle in checkValues:
-							if fkString in checkValuesSingle.values:
+						for checkValues in checkValuesList:
+							if fkString in checkValues:
 								found = True
 								break
 						
