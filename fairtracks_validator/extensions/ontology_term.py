@@ -92,8 +92,9 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		return True
 	
 	def bootstrap(self, refSchemaTuple = tuple()):
-		(id2ElemId , keyList , _) = refSchemaTuple
+		(id2ElemId , keyRefs , _) = refSchemaTuple
 		
+		keyList = keyRefs[self.triggerAttribute]
 		# Saving the unique locations
 		# based on information from FeatureLoc elems
 		uIdSet = set()
