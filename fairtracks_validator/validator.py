@@ -75,47 +75,6 @@ class ExtensibleValidator(object):
 		self.config = config
 		self.doNotValidateNoId = not bool(config.get('validate-no-id',True))
 	
-	@classmethod
-	def FindFKs(cls,jsonSchema,jsonSchemaURI,prefix=""):
-		FKs = []
-		
-		if isinstance(jsonSchema,dict):
-			# First, this level's foreign keys
-			isArray = False
-			
-			if 'items' in jsonSchema and isinstance(jsonSchema['items'],dict):
-				jsonSchema = jsonSchema['items']
-				isArray = True
-				
-				if prefix!='':
-					prefix += '[]'
-			
-			if 'foreign_keys' in jsonSchema and isinstance(jsonSchema['foreign_keys'],(list,tuple)):
-				for fk_def in jsonSchema['foreign_keys']:
-					# Only valid declarations are taken into account
-					if isinstance(fk_def,dict) and 'schema_id' in fk_def and 'members' in fk_def:
-						ref_schema_id = fk_def['schema_id']
-						members = fk_def['members']
-						
-						if isinstance(members,(list,tuple)):
-							# Translating to absolute URI (in case it is relative)
-							abs_ref_schema_id = uritools.urijoin(jsonSchemaURI,ref_schema_id)
-							
-							# Translating the paths
-							components = tuple(map(lambda component: prefix + '.' + component  if component not in ['.','']  else prefix, members))
-							
-							FKs.append((abs_ref_schema_id,components))
-			
-			# Then, the foreign keys inside sublevels
-			if 'properties' in jsonSchema and isinstance(jsonSchema['properties'],dict):
-				if prefix != '':
-					prefix += '.'
-				p = jsonSchema['properties']
-				for k,subSchema in p.items():
-					FKs.extend(cls.FindFKs(subSchema,jsonSchemaURI,prefix+k))
-		
-		return FKs
-	
 	def loadJSONSchemas(self,*args,verbose=None):
 		p_schemaHash = self.schemaHash
 		# Schema validation stats
