@@ -723,5 +723,5 @@ class FairGTracksValidator(ExtensibleValidator):
 		]
 	}
 	
-	def __init__(self,customFormats=CustomFormats, customTypes=CustomTypes, customValidators=CustomValidators, config=None):
+	def __init__(self,customFormats=CustomFormats, customTypes=CustomTypes, customValidators=CustomValidators, config={}):
 		super().__init__(customFormats,customTypes,customValidators,config)
