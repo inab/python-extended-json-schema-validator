@@ -64,20 +64,20 @@ class CurieSearch(AbstractCustomFeatureValidator):
 		return False
 	
 	def invalidateCaches(self):
-		self.InvalidateCurieCache()
+		self.InvalidateCurieCache(cachePath=self.config.get('cacheDir'))
 	
 	def warmUpCaches(self):
-		cache = self.GetCurieCache()
+		cache = self.GetCurieCache(cachePath=self.config.get('cacheDir'))
 	
 	@classmethod
-	def InvalidateCurieCache(cls):
+	def InvalidateCurieCache(cls, cachePath=None):
 		if hasattr(cls,'CurieCache'):
 			cache = getattr(cls,'CurieCache')
 			delattr(cls,'CurieCache')
 			cache.invalidate()
 			del cache
 		
-		cachePath = cls.GetCurieCachePath()
+		cachePath = cls.GetCurieCachePath(cachePath=cachePath)
 		delattr(cls,'CurieCachePath')
 		shutil.rmtree(cachePath,ignore_errors=True)
 	
@@ -88,7 +88,7 @@ class CurieSearch(AbstractCustomFeatureValidator):
 		if matchType not in CurieSearch.VALID_MATCHES:
 			raise ValidationError("attribute '{0}' is {1} but it must be one of the next values: {2}".format(self.MatchTypeAttrName,matchType,CurieSearch.VALID_MATCHES.keys()))
 		
-		cache = self.GetCurieCache()
+		cache = self.GetCurieCache(cachePath=self.config.get('cacheDir'))
 		
 		parsed = None
 		try:
@@ -154,19 +154,20 @@ class CurieSearch(AbstractCustomFeatureValidator):
 		return found, checkedPatterns
 	
 	@classmethod
-	def GetCurieCachePath(cls):
+	def GetCurieCachePath(cls, cachePath = None):
 		if not hasattr(cls,'CurieCachePath'):
 			doTempDir = False
-			try:
-				cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
-				# Is the directory writable?
-				if not os.access(cachePath,os.W_OK):
+			if cachePath is None:
+				try:
+					cachePath = xdg.BaseDirectory.save_cache_path('es.elixir.jsonValidator')
+					# Is the directory writable?
+					if not os.access(cachePath,os.W_OK):
+						doTempDir = True
+				except OSError as e:
+					# As it was not possible to create the
+					# directory at the cache path, create a
+					# temporary directory
 					doTempDir = True
-			except OSError as e:
-				# As it was not possible to create the
-				# directory at the cache path, create a
-				# temporary directory
-				doTempDir = True
 			
 			if doTempDir:
 				# The temporary directory should be
@@ -182,8 +183,9 @@ class CurieSearch(AbstractCustomFeatureValidator):
 		return getattr(cls,'CurieCachePath')
 	
 	@classmethod
-	def GetCurieCache(cls):
-		cachePath = cls.GetCurieCachePath()
+	def GetCurieCache(cls, cachePath = None):
+		if cachePath is None:
+			cachePath = cls.GetCurieCachePath(cachePath = cachePath)
 		
 		if not hasattr(cls,'CurieCache'):
 			setattr(cls,'CurieCache',CurieCache(filename=os.path.join(cachePath,'CURIE_cache.sqlite3')))

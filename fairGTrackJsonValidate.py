@@ -51,6 +51,7 @@ from fairtracks_validator.validator import FairGTracksValidator
 if __name__ == "__main__":
 	ap = argparse.ArgumentParser(description="Validate JSON against JSON Schemas with extensions")
 	ap.add_argument('-C','--config',dest="configFilename",help="Configuration file (used by extensions)")
+	ap.add_argument('--cache-dir',dest="cacheDir",help="Caching directory (used by extensions)")
 	ap.add_argument('--invalidate',help="Caches are invalidated on startup", action='store_true')
 	grp = ap.add_mutually_exclusive_group()
 	grp.add_argument('--warm-up',dest="warmUp",help="Caches are warmed up on startup", action='store_const', const=True)
@@ -59,11 +60,21 @@ if __name__ == "__main__":
 	ap.add_argument('json_files', metavar='json_file', nargs='*',help='The JSON files or directories to be validated')
 	args = ap.parse_args()
 	
+	# First, try loading the configuration file
 	if args.configFilename:
 		with open(args.configFilename,"r",encoding="utf-8") as cf:
 			local_config = yaml.load(cf,Loader=YAMLLoader)
 	else:
 		local_config = {}
+	
+	# Then, override based on parameters and flags
+	if args.cacheDir:
+		local_config['cacheDir'] = args.cacheDir
+	
+	# In any case, assuring the cache directory does exist
+	cacheDir = local_config.get('cacheDir')
+	if cacheDir:
+		os.makedirs(cacheDir, exist_ok=True)
 	
 	fgv = FairGTracksValidator(config=local_config)
 	

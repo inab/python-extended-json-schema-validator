@@ -112,11 +112,13 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		return []
 	
 	def invalidateCaches(self):
-		self.InvalidateWorld()
+		self.InvalidateAllWorlds(self.config.get('cacheDir'))
 	
 	def warmUpCaches(self):
+		cachePath = self.config.get('cacheDir')
+		doReasoner = self.config.get(self.KeyAttributeName,{}).get('do-reasoning',False)
 		for ontology in self.ontologies:
-			self.GetOntology(ontology)
+			self.GetOntology(ontology, doReasoner=doReasoner, cachePath=cachePath)
 	
 	@classmethod
 	def GetCachePath(cls):
@@ -145,7 +147,7 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		return cachePath
 	
 	@classmethod
-	def GetMetadataPath(cls,iri_hash):
+	def GetMetadataPath(cls, iri_hash, cachePath=None):
 		if not hasattr(cls,'MetadataPaths'):
 			setattr(cls,'MetadataPaths',{})
 		
@@ -153,7 +155,8 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		
 		metadataPath = MetadataPaths.get(iri_hash)
 		if metadataPath is None:
-			cachePath = cls.GetCachePath()
+			if cachePath is None:
+				cachePath = cls.GetCachePath()
 			
 			metadataPath = os.path.join(cachePath,'metadata_{0}.json'.format(iri_hash))
 			MetadataPaths[iri_hash] = metadataPath
@@ -161,7 +164,7 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		return metadataPath
 	
 	@classmethod
-	def GetWorldDBPath(cls,iri_hash):
+	def GetWorldDBPath(cls, iri_hash , cachePath=None):
 		if not hasattr(cls,'TermWorldsPaths'):
 			setattr(cls,'TermWorldsPaths',{})
 		
@@ -169,7 +172,8 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		
 		termWorldPath = TermWorldsPaths.get(iri_hash)
 		if termWorldPath is None:
-			cachePath = cls.GetCachePath()
+			if cachePath is None:
+				cachePath = cls.GetCachePath()
 			
 			termWorldPath = os.path.join(cachePath,'owlready2_{0}.sqlite3'.format(iri_hash))
 			TermWorldsPaths[iri_hash] = termWorldPath
@@ -177,15 +181,16 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		return termWorldPath
 	
 	@classmethod
-	def GetOntologyPath(cls,iri_hash):
-		cachePath = cls.GetCachePath()
+	def GetOntologyPath(cls, iri_hash, cachePath=None):
+		if cachePath is None:
+			cachePath = cls.GetCachePath()
 		
 		ontologyPath = os.path.join(cachePath,'ontology_{0}.owl'.format(iri_hash))
 		
 		return ontologyPath
 	
 	@classmethod
-	def InvalidateWorld(cls,iri):
+	def InvalidateWorld(cls, iri, cachePath=None):
 		# First, close the world and dispose its instance
 		if hasattr(cls,'TermWorlds'):
 			TermWorlds = getattr(cls,'TermWorlds')
@@ -208,12 +213,41 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 			if worldDBPath and os.path.exists(worldDBPath):
 				os.unlink(worldDBPath)
 			
-			ontologyPath = cls.GetOntologyPath(iri_hash)
+			ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
 			if os.path.exists(ontologyPath):
 				os.unlink(ontologyPath)
 	
 	@classmethod
-	def GetOntology(cls,iri,doReasoner=False):
+	def InvalidateAllWorlds(cls, cachePath=None):
+		# First, close the world and dispose its instance
+		if hasattr(cls,'TermWorlds'):
+			TermWorlds = getattr(cls,'TermWorlds')
+			
+			if TermWorlds:
+				MetadataPaths = getattr(cls,'MetadataPaths',{})
+				TermWorldsPaths = getattr(cls,'TermWorldsPaths',{})
+				for iri_hash, w in TermWorlds.items():
+					w.close()
+					del w
+					
+					# Then, remove the metadata
+					metadataPath = MetadataPaths.pop(iri_hash)
+					if metadataPath and os.path.exists(metadataPath):
+						os.unlink(metadataPath)
+					
+					# Last, remove the world database
+					worldDBPath = TermWorldsPaths.pop(iri_hash)
+					if worldDBPath and os.path.exists(worldDBPath):
+						os.unlink(worldDBPath)
+					
+					ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
+					if os.path.exists(ontologyPath):
+						os.unlink(ontologyPath)
+				
+				TermWorlds.clear()
+	
+	@classmethod
+	def GetOntology(cls, iri, doReasoner=False, cachePath=None):
 		iri_hash = hashlib.sha1(iri.encode('utf-8')).hexdigest()
 		if not hasattr(cls,'TermWorlds'):
 			setattr(cls,'TermWorlds',{})
@@ -222,7 +256,7 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		worldDB = TermWorlds.get(iri_hash)
 		
 		if worldDB is None:
-			worldDBPath = cls.GetWorldDBPath(iri_hash)
+			worldDBPath = cls.GetWorldDBPath(iri_hash,cachePath)
 			
 			# Activate this only if you want to save a copy of the ontologies
 			#ontologiesPath = os.path.join(cachePath,'ontologies')
@@ -232,7 +266,7 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 			TermWorlds[iri_hash] = worldDB
 		
 		# Trying to get the metadata useful for an optimal ontology download
-		metadataPath = cls.GetMetadataPath(iri_hash)
+		metadataPath = cls.GetMetadataPath(iri_hash,cachePath)
 		if os.path.exists(metadataPath):
 			try:
 				with open(metadataPath,mode='r',encoding='utf-8') as metadata_fh:
@@ -243,7 +277,7 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		else:
 			metadata = {}
 		
-		ontologyPath = cls.GetOntologyPath(iri_hash)
+		ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
 		gotPath,gotMetadata = download_file(iri,ontologyPath,metadata)
 		if gotPath:
 			gotMetadata['orig_url'] = iri
@@ -293,8 +327,10 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		}
 		isValid = False
 		invalidAncestors = False
+		cachePath = self.config.get('cacheDir')
+		doReasoner = self.config.get(self.KeyAttributeName,{}).get('do-reasoning',False)
 		for ontology in ontlist:
-			onto = self.GetOntology(ontology)
+			onto = self.GetOntology(ontology, doReasoner = doReasoner, cachePath = cachePath)
 			
 			foundTerms = onto.search(**queryParams)
 			# Is the term findable with these conditions?

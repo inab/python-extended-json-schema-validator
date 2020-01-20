@@ -117,8 +117,6 @@ class ForeignProperty(AbstractCustomFeatureValidator):
 			# Second pass will do the validation
 			for theValue in theValues:
 				fpVals.append(FPVal(where=self.currentJSONFile,value=theValue))
-				import pprint
-				pprint.pprint(fpDef,stream=sys.stderr)
 	
 	# Now, time to check
 	def doSecondPass(self,l_customFeatureValidatorsContext):
