@@ -146,37 +146,31 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		
 		return cachePath
 	
+	MetadataPaths = {}
+	
 	@classmethod
 	def GetMetadataPath(cls, iri_hash, cachePath=None):
-		if not hasattr(cls,'MetadataPaths'):
-			setattr(cls,'MetadataPaths',{})
-		
-		MetadataPaths = getattr(cls,'MetadataPaths')
-		
-		metadataPath = MetadataPaths.get(iri_hash)
+		metadataPath = cls.MetadataPaths.get(iri_hash)
 		if metadataPath is None:
 			if cachePath is None:
 				cachePath = cls.GetCachePath()
 			
 			metadataPath = os.path.join(cachePath,'metadata_{0}.json'.format(iri_hash))
-			MetadataPaths[iri_hash] = metadataPath
+			cls.MetadataPaths[iri_hash] = metadataPath
 		
 		return metadataPath
 	
+	TermWorldsPaths = {}
+	
 	@classmethod
 	def GetWorldDBPath(cls, iri_hash , cachePath=None):
-		if not hasattr(cls,'TermWorldsPaths'):
-			setattr(cls,'TermWorldsPaths',{})
-		
-		TermWorldsPaths = getattr(cls,'TermWorldsPaths')
-		
-		termWorldPath = TermWorldsPaths.get(iri_hash)
+		termWorldPath = cls.TermWorldsPaths.get(iri_hash)
 		if termWorldPath is None:
 			if cachePath is None:
 				cachePath = cls.GetCachePath()
 			
 			termWorldPath = os.path.join(cachePath,'owlready2_{0}.sqlite3'.format(iri_hash))
-			TermWorldsPaths[iri_hash] = termWorldPath
+			cls.TermWorldsPaths[iri_hash] = termWorldPath
 		
 		return termWorldPath
 	
@@ -189,117 +183,126 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 		
 		return ontologyPath
 	
+	ONTO_CACHE = {}
+	
 	@classmethod
 	def InvalidateWorld(cls, iri, cachePath=None):
 		# First, close the world and dispose its instance
-		if hasattr(cls,'TermWorlds'):
-			TermWorlds = getattr(cls,'TermWorlds')
-			iri_hash = hashlib.sha1(iri.encode('utf-8')).hexdigest()
-			
-			w = TermWorlds.pop(iri_hash)
-			if w:
-				w.close()
-				del w
-			
-			# Then, remove the metadata
-			MetadataPaths = getattr(cls,'MetadataPaths',{})
-			metadataPath = MetadataPaths.pop(iri_hash)
-			if metadataPath and os.path.exists(metadataPath):
-				os.unlink(metadataPath)
-			
-			# Last, remove the world database
-			TermWorldsPaths = getattr(cls,'TermWorldsPaths',{})
-			worldDBPath = TermWorldsPaths.pop(iri_hash)
-			if worldDBPath and os.path.exists(worldDBPath):
-				os.unlink(worldDBPath)
-			
-			ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
-			if os.path.exists(ontologyPath):
-				os.unlink(ontologyPath)
+		iri_hash = hashlib.sha1(iri.encode('utf-8')).hexdigest()
+		
+		w = cls.TermWorlds.pop(iri_hash)
+		if w:
+			# Removing the reference to the ontology
+			onto = cls.ONTO_CACHE.pop(iri_hash)
+			if onto:
+				del onto
+			w.close()
+			del w
+		
+		# Then, remove the metadata
+		metadataPath = cls.MetadataPaths.pop(iri_hash)
+		if metadataPath and os.path.exists(metadataPath):
+			os.unlink(metadataPath)
+		
+		# Last, remove the world database
+		worldDBPath = cls.TermWorldsPaths.pop(iri_hash)
+		if worldDBPath and os.path.exists(worldDBPath):
+			os.unlink(worldDBPath)
+		
+		ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
+		if os.path.exists(ontologyPath):
+			os.unlink(ontologyPath)
 	
 	@classmethod
 	def InvalidateAllWorlds(cls, cachePath=None):
 		# First, close the world and dispose its instance
-		if hasattr(cls,'TermWorlds'):
-			TermWorlds = getattr(cls,'TermWorlds')
-			
-			if TermWorlds:
-				MetadataPaths = getattr(cls,'MetadataPaths',{})
-				TermWorldsPaths = getattr(cls,'TermWorldsPaths',{})
-				for iri_hash, w in TermWorlds.items():
-					w.close()
-					del w
-					
-					# Then, remove the metadata
-					metadataPath = MetadataPaths.pop(iri_hash)
-					if metadataPath and os.path.exists(metadataPath):
-						os.unlink(metadataPath)
-					
-					# Last, remove the world database
-					worldDBPath = TermWorldsPaths.pop(iri_hash)
-					if worldDBPath and os.path.exists(worldDBPath):
-						os.unlink(worldDBPath)
-					
-					ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
-					if os.path.exists(ontologyPath):
-						os.unlink(ontologyPath)
+		if cls.TermWorlds:
+			for iri_hash, w in cls.TermWorlds.items():
+				# Removing the reference to the ontology
+				onto = cls.ONTO_CACHE.pop(iri_hash)
+				if onto:
+					del onto
 				
-				TermWorlds.clear()
+				w.close()
+				del w
+				
+				# Then, remove the metadata
+				metadataPath = cls.MetadataPaths.pop(iri_hash)
+				if metadataPath and os.path.exists(metadataPath):
+					os.unlink(metadataPath)
+				
+				# Last, remove the world database
+				worldDBPath = cls.TermWorldsPaths.pop(iri_hash)
+				if worldDBPath and os.path.exists(worldDBPath):
+					os.unlink(worldDBPath)
+				
+				ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
+				if os.path.exists(ontologyPath):
+					os.unlink(ontologyPath)
+			
+			cls.TermWorlds.clear()
+	
+	IRI_HASH = {}
+	TermWorlds = {}
 	
 	@classmethod
 	def GetOntology(cls, iri, doReasoner=False, cachePath=None):
-		iri_hash = hashlib.sha1(iri.encode('utf-8')).hexdigest()
-		if not hasattr(cls,'TermWorlds'):
-			setattr(cls,'TermWorlds',{})
+		iri_hash = cls.IRI_HASH.get(iri)
 		
-		TermWorlds = getattr(cls,'TermWorlds')
-		worldDB = TermWorlds.get(iri_hash)
+		if iri_hash is None:
+			cls.IRI_HASH[iri] = iri_hash = hashlib.sha1(iri.encode('utf-8')).hexdigest()
 		
-		if worldDB is None:
-			worldDBPath = cls.GetWorldDBPath(iri_hash,cachePath)
+		onto = cls.ONTO_CACHE.get(iri_hash)
+		if onto is None:
+			worldDB = cls.TermWorlds.get(iri_hash)
 			
-			# Activate this only if you want to save a copy of the ontologies
-			#ontologiesPath = os.path.join(cachePath,'ontologies')
-			#os.makedirs(ontologiesPath,exist_ok=True)
-			#owlready2.onto_path.append(ontologiesPath)
-			worldDB = owlready2.World(filename=worldDBPath, exclusive=False)
-			TermWorlds[iri_hash] = worldDB
-		
-		# Trying to get the metadata useful for an optimal ontology download
-		metadataPath = cls.GetMetadataPath(iri_hash,cachePath)
-		if os.path.exists(metadataPath):
-			try:
-				with open(metadataPath,mode='r',encoding='utf-8') as metadata_fh:
-					metadata = json.load(metadata_fh)
-			except:
-				# A corrupted cache should not disturb
+			if worldDB is None:
+				worldDBPath = cls.GetWorldDBPath(iri_hash,cachePath)
+				
+				# Activate this only if you want to save a copy of the ontologies
+				#ontologiesPath = os.path.join(cachePath,'ontologies')
+				#os.makedirs(ontologiesPath,exist_ok=True)
+				#owlready2.onto_path.append(ontologiesPath)
+				worldDB = owlready2.World(filename=worldDBPath, exclusive=False)
+				cls.TermWorlds[iri_hash] = worldDB
+			
+			# Trying to get the metadata useful for an optimal ontology download
+			metadataPath = cls.GetMetadataPath(iri_hash,cachePath)
+			if os.path.exists(metadataPath):
+				try:
+					with open(metadataPath,mode='r',encoding='utf-8') as metadata_fh:
+						metadata = json.load(metadata_fh)
+				except:
+					# A corrupted cache should not disturb
+					metadata = {}
+			else:
 				metadata = {}
-		else:
-			metadata = {}
-		
-		ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
-		gotPath,gotMetadata = download_file(iri,ontologyPath,metadata)
-		if gotPath:
-			gotMetadata['orig_url'] = iri
-			# Reading the ontology
-			with open(ontologyPath,mode="rb") as onto_fh:
-				onto = worldDB.get_ontology(iri).load(fileobj=onto_fh,reload=True)
 			
+			ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
+			gotPath,gotMetadata = download_file(iri,ontologyPath,metadata)
+			if gotPath:
+				gotMetadata['orig_url'] = iri
+				# Reading the ontology
+				with open(ontologyPath,mode="rb") as onto_fh:
+					onto = worldDB.get_ontology(iri).load(fileobj=onto_fh,reload=True)
+				
+				# Save the metadata
+				with open(metadataPath,mode="w",encoding="utf-8") as metadata_fh:
+					json.dump(gotMetadata,metadata_fh)
+				
+				# Re-save once the reasoner has run
+				if doReasoner:
+					worldDB.save()
+					owlready2.sync_reasoner(onto)
+			else:
+				onto = worldDB.get_ontology(iri).load()
 			worldDB.save()
-			# Save the metadata
-			with open(metadataPath,mode="w",encoding="utf-8") as metadata_fh:
-				json.dump(gotMetadata,metadata_fh)
 			
-			# Re-save once the reasoner has run
-			if doReasoner:
-				owlready2.sync_reasoner(onto)
-				worldDB.save()
-		else:
-			onto = worldDB.get_ontology(iri).load()
-		
-		# And now unlink the ontology (if exists)
-		if os.path.exists(ontologyPath):
-			os.unlink(ontologyPath)
+			# And now unlink the ontology (if exists)
+			if os.path.exists(ontologyPath):
+				os.unlink(ontologyPath)
+			
+			cls.ONTO_CACHE[iri_hash] = onto
 		
 		return onto
 	
