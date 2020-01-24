@@ -42,7 +42,7 @@ from fairtracks_validator.extensions.pk_check import PrimaryKey
 from fairtracks_validator.extensions.fk_check import ForeignKey
 from fairtracks_validator.extensions.foreign_property_check import ForeignProperty
 
-from .extend_validator import extendValidator , traverseJSONSchema , PLAIN_VALIDATOR_MAPPER , REF_FEATURE
+from .extend_validator import extendValidator , traverseJSONSchema , flattenTraverseListSet, PLAIN_VALIDATOR_MAPPER , REF_FEATURE
 
 class ExtensibleValidator(object):
 	CustomBaseValidators = {
@@ -216,6 +216,8 @@ class ExtensibleValidator(object):
 		
 		if verbose:
 			print("PASS 0.b: JSON schema validation")
+		
+		refSchemaListSet = {}
 		for schemaObj in jsonSchemaNext:
 			jsonSchema = schemaObj['schema']
 			jsonSchemaFile = schemaObj['file']
@@ -297,7 +299,8 @@ class ExtensibleValidator(object):
 					for cFI in customFormatInstances:
 						for triggerAttribute,_ in cFI.getValidators():
 							triggeringFeatures.append(triggerAttribute)
-					refSchemaSet[jsonSchemaURI] = traverseJSONSchema(jsonSchema,jsonSchemaURI,keys=triggeringFeatures)
+					
+					traverseJSONSchema(jsonSchema,schemaURI=jsonSchemaURI,keys=triggeringFeatures,refSchemaListSet=refSchemaListSet)
 					
 					p_schemaHash[jsonSchemaURI] = schemaObj
 					numFileOK += 1
@@ -318,36 +321,77 @@ class ExtensibleValidator(object):
 		
 			print("\nPASS 0.c: JSON schema set consistency checks")
 		
-		# BUGME: no circular references check is still in place
-		for jsonSchemaURI , jsonSchemaSet in refSchemaSet.items():
+		# Circular references check is based on having two levels
+		# one unmodified, another being built from the first, taking
+		# into account already visited schemas
+		refSchemaSetBase = {}
+		for jsonSchemaURI, traverseListSet in refSchemaListSet.items():
+			# Time to implode each one of the elements from refSchemaListSet
+			# for further usage
+			refSchemaSetBase[jsonSchemaURI] = flattenTraverseListSet(traverseListSet)
+			
+		for jsonSchemaURI, jsonSchemaSet in refSchemaSetBase.items():
 			id2ElemId , keyRefs , jp2val = jsonSchemaSet
-			# TODO: augment refSchemaSet id2ElemId and keyRefs with
+			
 			# referenced schemas id2ElemId and keyRefs
-			refList = keyRefs.get(REF_FEATURE,[])
-			for fLoc in refList:
-				theRef = fLoc.context[REF_FEATURE]
-				# Computing the absolute schema URI
-				if uritools.isabsuri(jsonSchemaURI):
-					abs_ref_schema_id , _ = uritools.uridefrag(uritools.urijoin(jsonSchemaURI,theRef))
-				else:
-					abs_ref_schema_id , _ = uritools.uridefrag(uritools.urijoin(jsonSchemaURI,theRef))
+			if REF_FEATURE in keyRefs:
+				# Unlinking references on keyRefs
+				keyRefs_augmented = {}
+				for featName , featList in keyRefs.items():
+					keyRefs_augmented[featName] = list(featList)
 				
-				# Now, time to get the referenced, gathered data
-				refSet = refSchemaSet.get(abs_ref_schema_id)
-				if refSet is not None:
-					ref_id2ElemId , ref_keyRefs , ref_jp2val = refSet
+				# Unlinking references on id2ElemId
+				id2ElemId_augmented = {}
+				for i2e_k , featDict in  id2ElemId.items():
+					id2ElemId_augmented[i2e_k] = {}
+					for featName , l_uniqId in featDict.items():
+						id2ElemId_augmented[i2e_k][featName] = list(l_uniqId)
+				
+				# And on the $ref case
+				refList = keyRefs_augmented[REF_FEATURE]
+				
+				# Initializing the visitedURIs through
+				# $ref fetching
+				visitedURIs = set([jsonSchemaURI])
+				
+				# This $ref list can be increased through the process
+				for fLoc in refList:
+					theRef = fLoc.context[REF_FEATURE]
+					# Computing the absolute schema URI
+					if uritools.isabsuri(jsonSchemaURI):
+						abs_ref_schema_id , _ = uritools.uridefrag(uritools.urijoin(jsonSchemaURI,theRef))
+					else:
+						abs_ref_schema_id , _ = uritools.uridefrag(uritools.urijoin(jsonSchemaURI,theRef))
 					
-					# This is needed to have a proper bootstrap
-					for ref_pAddr_k, ref_pAddr_v in ref_id2ElemId.items():
-						for ref_feat_k , ref_feat_v in ref_pAddr_v.items():
-							id2ElemId.setdefault(ref_pAddr_k,{}).setdefault(ref_feat_k,[]).extend(ref_feat_v)
+					# Circular references detection check
+					if abs_ref_schema_id in visitedURIs:
+						continue
 					
-					for ref_kR_k , ref_kR_v in ref_keyRefs.items():
-						keyRefs.setdefault(ref_kR_k,[]).extend(ref_kR_v)
+					visitedURIs.add(abs_ref_schema_id)
+					
+					# Now, time to get the referenced, gathered data
+					refSet = refSchemaSetBase.get(abs_ref_schema_id)
+					if refSet is not None:
+						ref_id2ElemId , ref_keyRefs , ref_jp2val = refSet
 						
-				else:
-					# TODO: error handling
-					print("UNHANDLED ERROR",file=sys.stderr)
+						# TODO: properly augment refSchemaSet id2ElemId and keyRefs with
+						# This is needed to have a proper bootstrap
+						
+						for ref_pAddr_k, ref_pAddr_v in ref_id2ElemId.items():
+							featDict = id2ElemId_augmented.setdefault(ref_pAddr_k,{})
+							for ref_feat_k , ref_feat_v in ref_pAddr_v.items():
+								featDict.setdefault(ref_feat_k,[]).extend(ref_feat_v)
+						
+						for ref_kR_k , ref_kR_v in ref_keyRefs.items():
+							keyRefs_augmented.setdefault(ref_kR_k,[]).extend(ref_kR_v)
+					else:
+						# TODO: error handling
+						print("UNHANDLED ERROR",file=sys.stderr)
+				
+				# Recomposing the tuple
+				jsonSchemaSet = (id2ElemId_augmented,keyRefs_augmented,jp2val)
+			
+			refSchemaSet[jsonSchemaURI] = jsonSchemaSet
 		
 		# Last, bootstrapping the extensions
 		# Now, we check whether the declared foreign keys are pointing to loaded JSON schemas
