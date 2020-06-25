@@ -6,6 +6,7 @@ import sys
 import os
 import argparse
 import time
+import json
 
 import yaml
 # We have preference for the C based loader and dumper, but the code
@@ -52,6 +53,11 @@ if __name__ == "__main__":
 	ap = argparse.ArgumentParser(description="Validate JSON against JSON Schemas with extensions")
 	ap.add_argument('-C','--config',dest="configFilename",help="Configuration file (used by extensions)")
 	ap.add_argument('--cache-dir',dest="cacheDir",help="Caching directory (used by extensions)")
+	
+	ap.add_argument('--report',dest="reportFilename",help="Store validation report (in JSON format) in a file")
+	ap.add_argument('--verbose-report',dest="isQuietReport",help="When this flag is enabled, the report also embeds the json contents which were validated", action='store_false', default=True)
+	ap.add_argument('-q','--quiet',dest="isVerbose",help="Quiet (no human report through stdout/stderr)", action='store_false', default=True)
+	
 	ap.add_argument('--invalidate',help="Caches are invalidated on startup", action='store_true')
 	grp = ap.add_mutually_exclusive_group()
 	grp.add_argument('--warm-up',dest="warmUp",help="Caches are warmed up on startup", action='store_const', const=True)
@@ -78,20 +84,23 @@ if __name__ == "__main__":
 	
 	fgv = FairGTracksValidator(config=local_config)
 	
-	numSchemas = fgv.loadJSONSchemas(args.jsonSchemaDir,verbose=True)
+	numSchemas = fgv.loadJSONSchemas(args.jsonSchemaDir,verbose=args.isVerbose)
 	
 	if numSchemas > 0:
 		# Should we invalidate caches?
 		if args.invalidate:
-			print("\n* Invalidating caches.")
+			if args.isVerbose:
+				print("\n* Invalidating caches.")
 			fgv.invalidateCaches()
 
 		if args.warmUp:
-			print("\n* Warming up caches...")
+			if args.isVerbose:
+				print("\n* Warming up caches...")
 			t0 = time.time()
 			fgv.warmUpCaches()
 			t1 = time.time()
-			print("\t{} seconds".format(t1-t0))
+			if args.isVerbose:
+				print("\t{} seconds".format(t1-t0))
 			
 			
 	if len(sys.argv) > 2:
@@ -100,4 +109,21 @@ if __name__ == "__main__":
 			sys.exit(1)
 		
 		jsonFiles = tuple(args.json_files)
-		fgv.jsonValidate(*jsonFiles,verbose=True)
+		report = fgv.jsonValidate(*jsonFiles,verbose=args.isVerbose)
+		
+		if args.reportFilename is not None:
+			if args.isVerbose:
+				print("\n* Storing JSON report at {}".format(args.reportFilename))
+			if args.isQuietReport:
+				for rep in report:
+					del rep['json']
+			with open(args.reportFilename,mode='w',encoding='utf-8') as repH:
+				json.dump(report,repH,indent=4,sort_keys=True)
+		
+		exitCode = 0
+		for rep in report:
+			if len(rep['errors']) > 0:
+				exitCode = 2
+				break
+		
+		sys.exit(exitCode)
