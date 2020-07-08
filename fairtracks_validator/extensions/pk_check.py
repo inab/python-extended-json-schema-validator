@@ -61,42 +61,64 @@ class PrimaryKey(UniqueKey):
 	###
 	
 	def warmUpCaches(self):
-		self.warmedUp = True
-		setup = self.config.get(self.KeyAttributeName)
-		if setup is not None:
-			prefix = setup.get('schema_prefix')
-			accept = setup.get('accept')
-			if prefix != self.schemaURI and accept is not None:
-				self.gotIdsSet = {}
-				
-				# The list of sources
-				url_base_list = setup.get('provider',[])
-				if not isinstance(url_base_list,(list,tuple)):
-					url_base_list = [ url_base_list ]
-				
-				for url_base in url_base_list:
-					# Fetch the ids, based on the id
-					relColId = urlparse(self.schemaURI).path.split('/')[-1]
-					compURL = urljoin(url_base,relColId + '/')
-					r = Request(compURL,headers={'Accept': accept})
+		if not self.warmedUp:
+			self.warmedUp = True
+			
+			setup = self.config.get(self.KeyAttributeName)
+			if setup is not None:
+				prefix = setup.get('schema_prefix')
+				accept = setup.get('accept')
+				if prefix != self.schemaURI and accept is not None:
+					self.gotIdsSet = {}
 					
-					try:
-						with urlopen(r) as f:
-							if f.getcode() == 200:
-								gotIds = str(f.read(),'utf-8').split()
-								if gotIds:
-									self.gotIdsSet[compURL] = gotIds
-									self.doPopulate = True
-					except urllib.error.HTTPError as he:
-						print("ERROR: Unable to fetch remote keys data from {0} [{1}]: {2}".format(compURL,he.code,he.reason), file=sys.stderr)
-					except urllib.error.URLError as ue:
-						print("ERROR: Unable to fetch remote keys data from {0}: {1}".format(compURL,ue.reason), file=sys.stderr)
-					except:
-						print("ERROR: Unable to parse remote keys data from "+compURL, file=sys.stderr)
+					# The list of sources
+					url_base_list = setup.get('provider',[])
+					if not isinstance(url_base_list,(list,tuple)):
+						url_base_list = [ url_base_list ]
+					
+					for url_base in url_base_list:
+						# Fetch the ids, based on the id
+						relColId = urlparse(self.schemaURI).path.split('/')[-1]
+						compURL = urljoin(url_base,relColId + '/')
+						r = Request(compURL,headers={'Accept': accept})
+						
+						try:
+							with urlopen(r) as f:
+								if f.getcode() == 200:
+									gotIds = str(f.read(),'utf-8').split()
+									if gotIds:
+										self.gotIdsSet[compURL] = gotIds
+										self.doPopulate = True
+						except urllib.error.HTTPError as he:
+							print("ERROR: Unable to fetch remote keys data from {0} [{1}]: {2}".format(compURL,he.code,he.reason), file=sys.stderr)
+						except urllib.error.URLError as ue:
+							print("ERROR: Unable to fetch remote keys data from {0}: {1}".format(compURL,ue.reason), file=sys.stderr)
+						except:
+							print("ERROR: Unable to parse remote keys data from "+compURL, file=sys.stderr)
+							traceback.print_last()
+	
+	def doDefaultPopulation(self):
+		if self.doPopulate:
+			# Deactivate future populations
+			self.doPopulate = False
+			
+			unique_id = -1
+			if self.gotIdsSet:
+				# The common dictionary for this declaration where all the unique values are kept
+				uniqueDef = self.UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=[],values=dict()))
+				uniqueSet = uniqueDef.values
+				
+				# Should it complain about this?
+				for compURL, gotIds in self.gotIdsSet.items():
+					for theValue in gotIds:
+						if theValue in uniqueSet:
+							raise ValidationError("Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(self.triggerAttribute, theValue,uniqueSet[theValue]),validator_value={"reason": self._errorReason})
+						else:
+							uniqueSet[theValue] = compURL
+		
 	
 	def validate(self,validator,unique_state,value,schema):
-		if not self.warmedUp:
-			self.warmUpCaches()
+		self.warmUpCaches()
 		
 		# Populating before the validation itself
 		if unique_state:
@@ -141,9 +163,17 @@ class PrimaryKey(UniqueKey):
 					yield ValidationError("Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(self.triggerAttribute, theValue,uniqueSet[theValue]),validator_value={"reason": self._errorReason})
 				else:
 					uniqueSet[theValue] = self.currentJSONFile
-				
+	
+	def getContext(self):
+		# These are needed to assure the context is always completely populated
+		self.warmUpCaches()
+		self.doDefaultPopulation()
+		
+		return super().getContext()
+	
 	def invalidateCaches(self):
 		self.warmedUp = False
+		self.doPopulate = False
 		self.gotIdsSet = None
 	
 	def cleanup(self):

@@ -168,8 +168,9 @@ class ForeignKey(AbstractCustomFeatureValidator):
 						# As there can be nested keys from other schemas
 						# ignore the schemaURI from the context, and use
 						# the one in the unique location
-						pkVals = pkContextsHash.setdefault(pkLoc.schemaURI,[])
-						pkVals.append(pkDef.values)
+						if len(pkDef.values) > 0:
+							pkVals = pkContextsHash.setdefault(pkLoc.schemaURI,[])
+							pkVals.append(pkDef.values)
 		
 		# Now, at last, check!!!!!!!
 		uniqueWhere = set()

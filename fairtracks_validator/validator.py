@@ -407,22 +407,24 @@ class ExtensibleValidator(object):
 				(id2ElemId , keyRefs , jp2val) = refSchemaSet[jsonSchemaURI]
 				
 				for cFI in customFormatInstances:
-					doBootstrap = False
-					for triggerAttribute,_ in cFI.getValidators():
-						if triggerAttribute in keyRefs:
-							doBootstrap =True
-					
-					if doBootstrap:
-						# Bootstrapping the schema
-						# By default this is a no-op
-						errors = cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs , self.refSchemaCache))
-						if errors:
-							if verbose:
-								for error in errors:
-									print("\t- ERROR: {}".format(error['description']),file=sys.stderr)
-							
-							p_schema['errors'].extend(errors)
-							isValid = False
+					if cFI.needsBootstrapping:
+						doBootstrap = False
+						for triggerAttribute,_ in cFI.getValidators():
+							if triggerAttribute in keyRefs:
+								doBootstrap = True
+								break
+						
+						if doBootstrap:
+							# Bootstrapping the schema
+							# By default this is a no-op
+							errors = cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs , self.refSchemaCache))
+							if errors:
+								if verbose:
+									for error in errors:
+										print("\t- ERROR: {}".format(error['description']),file=sys.stderr)
+								
+								p_schema['errors'].extend(errors)
+								isValid = False
 			
 			if isValid:
 				if verbose:
@@ -519,6 +521,17 @@ class ExtensibleValidator(object):
 		report = []
 		dynSchemaSet = set()
 		dynSchemaValList = []
+		
+		# This step is needed for cases where external sources can populate
+		# the structures used to validate, like the list of primary keys
+		for jsonSchemaId, schemaObj in p_schemaHash.items():
+			if jsonSchemaId not in dynSchemaSet:
+				dynSchemaSet.add(jsonSchemaId)
+				localDynSchemaVal = schemaObj['customFormatInstances']
+				if localDynSchemaVal:
+					# We reset them, in case they were dirty
+					self._resetDynamicValidators(localDynSchemaVal)
+					dynSchemaValList.extend(localDynSchemaVal)
 		
 		# First pass, check against JSON schema, as well as primary keys unicity
 		if verbose:
