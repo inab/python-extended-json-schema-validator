@@ -9,6 +9,7 @@ import owlready2
 import xdg.BaseDirectory
 import os
 import urllib
+import urllib.error
 import sys
 import tempfile
 import shutil
@@ -279,7 +280,15 @@ class OntologyTerm(AbstractCustomFeatureValidator):
 				metadata = {}
 			
 			ontologyPath = cls.GetOntologyPath(iri_hash,cachePath)
-			gotPath,gotMetadata = download_file(iri,ontologyPath,metadata)
+			gotPath = None
+			gotMetadata = None
+			try:
+				gotPath,gotMetadata = download_file(iri,ontologyPath,metadata)
+			except urllib.error.HTTPError as he:
+				if he.code < 500:
+					raise he
+				else:
+					print("WARNING: transient error fetching {}. {}".format(iri, he),file=sys.stderr)
 			if gotPath:
 				gotMetadata['orig_url'] = iri
 				# Reading the ontology
