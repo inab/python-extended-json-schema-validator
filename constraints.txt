@@ -1,11 +1,11 @@
 attrs==21.2.0
 Cython==0.29.23
 dateparser==1.0.0
-idna==3.1
-importlib-metadata==4.3.0
+idna==3.2
+importlib-metadata==4.5.0
 jsonpointer==2.1
 jsonschema==3.2.0
-Owlready2==0.31
+Owlready2==0.33
 pyrsistent==0.17.3
 python-dateutil==2.8.1
 pytz==2021.1
