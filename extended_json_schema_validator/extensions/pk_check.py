@@ -90,12 +90,11 @@ class PrimaryKey(UniqueKey):
 										self.gotIdsSet[compURL] = gotIds
 										self.doPopulate = True
 						except urllib.error.HTTPError as he:
-							print("ERROR: Unable to fetch remote keys data from {0} [{1}]: {2}".format(compURL,he.code,he.reason), file=sys.stderr)
+							self.logger.error("ERROR: Unable to fetch remote keys data from {0} [{1}]: {2}".format(compURL,he.code,he.reason))
 						except urllib.error.URLError as ue:
-							print("ERROR: Unable to fetch remote keys data from {0}: {1}".format(compURL,ue.reason), file=sys.stderr)
+							self.logger.error("ERROR: Unable to fetch remote keys data from {0}: {1}".format(compURL,ue.reason))
 						except:
-							print("ERROR: Unable to parse remote keys data from "+compURL, file=sys.stderr)
-							traceback.print_last()
+							self.logger.exception("ERROR: Unable to parse remote keys data from "+compURL)
 	
 	def doDefaultPopulation(self):
 		if self.doPopulate:
