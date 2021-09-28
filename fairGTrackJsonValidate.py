@@ -47,7 +47,7 @@ def disable_outerr_buffering():
 
 disable_outerr_buffering()
 
-from fairtracks_validator.validator import FairGTracksValidator
+from fairtracks_validator.fairtracks_validator import FairGTracksValidator
 
 if __name__ == "__main__":
 	ap = argparse.ArgumentParser(description="Validate JSON against JSON Schemas with extensions")

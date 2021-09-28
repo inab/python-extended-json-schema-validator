@@ -9,16 +9,17 @@ import sys
 # In this way, we are sure we are getting
 # the installer's version of the library
 # not the system's one
-sys.path.insert(0,os.path.dirname(__file__))
+setupBaseDir = os.path.dirname(__file__)
+sys.path.insert(0, setupBaseDir)
 
 from fairtracks_validator import version as fairtracks_validator_version
 
 # Populating the long description
-with open("README.md", "r") as fh:
+with open(os.path.join(setupBaseDir, "README.md"), "r") as fh:
 	long_description = fh.read()
 
 # Populating the install requirements
-with open('requirements.txt') as f:
+with open(os.path.join(setupBaseDir, 'requirements.txt')) as f:
 	requirements = []
 	egg = re.compile(r"#[^#]*egg=([^=&]+)")
 	for line in f.read().splitlines():

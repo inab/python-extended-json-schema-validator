@@ -9,7 +9,7 @@ import copy
 CheckContext = namedtuple('CheckContext',['schemaURI','context'])
 
 class AbstractCustomFeatureValidator(abc.ABC):
-	def __init__(self,schemaURI, jsonSchemaSource='(unknown)', config = {}):
+	def __init__(self, schemaURI, jsonSchemaSource='(unknown)', config = {}):
 		self.schemaURI = schemaURI
 		self.jsonSchemaSource = jsonSchemaSource
 		self.config = config

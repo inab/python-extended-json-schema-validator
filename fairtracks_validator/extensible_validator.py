@@ -10,37 +10,10 @@ import jsonschema as JSV
 import uritools
 import hashlib
 
-from collections import namedtuple
-
-# This is needed to assure open suports encoding parameter
-if sys.version_info[0] > 2:
-	ALLOWED_KEY_TYPES=(bytes,str)
-	ALLOWED_ATOMIC_VALUE_TYPES=(int,bytes,str,float,bool)
-	# py3k
-	pass
-else:
-	ALLOWED_KEY_TYPES=(str,unicode)
-	ALLOWED_ATOMIC_VALUE_TYPES=(int,long,str,unicode,float,bool)
-	# py2
-	import codecs
-	import warnings
-	def open(file, mode='r', buffering=-1, encoding=None, errors=None, newline=None, closefd=True, opener=None):
-		if newline is not None:
-			warnings.warn('newline is not supported in py2')
-		if not closefd:
-			warnings.warn('closefd is not supported in py2')
-		if opener is not None:
-			warnings.warn('opener is not supported in py2')
-		return codecs.open(filename=file, mode=mode, encoding=encoding, errors=errors, buffering=buffering)
-
-
 # Augmenting the supported types
-from fairtracks_validator.extensions.curie_search import CurieSearch
-from fairtracks_validator.extensions.ontology_term import OntologyTerm
-from fairtracks_validator.extensions.unique_check import UniqueKey
-from fairtracks_validator.extensions.pk_check import PrimaryKey
-from fairtracks_validator.extensions.fk_check import ForeignKey
-from fairtracks_validator.extensions.foreign_property_check import ForeignProperty
+from .extensions.unique_check import UniqueKey
+from .extensions.pk_check import PrimaryKey
+from .extensions.fk_check import ForeignKey
 
 from .extend_validator import extendValidator , traverseJSONSchema , flattenTraverseListSet, PLAIN_VALIDATOR_MAPPER , REF_FEATURE
 
@@ -756,29 +729,3 @@ class ExtensibleValidator(object):
 			print("\nVALIDATION STATS:\n\t- directories ({0} OK, {1} failed)\n\t- File PASS 1 ({2} OK, {3} ignored, {4} error)\n\t- File PASS 2 ({5} OK, {6} error)".format(numDirOK,numDirFail,numFilePass1OK,numFilePass1Ignore,numFilePass1Fail,numFilePass2OK,numFilePass2Fail))
 		
 		return report
-
-class FairGTracksValidator(ExtensibleValidator):
-	# This has been commented out, as we are following the format validation path
-	CustomTypes = {
-	#	'curie': CurieSearch.IsCurie,
-	#	'term': OntologyTerm.IsTerm
-	}
-
-	CustomFormats = [
-		CurieSearch,
-		OntologyTerm
-	]
-	
-	CustomValidators = {
-		None: [
-			CurieSearch,
-			OntologyTerm,
-			UniqueKey,
-			PrimaryKey,
-			ForeignKey,
-			ForeignProperty
-		]
-	}
-	
-	def __init__(self,customFormats=CustomFormats, customTypes=CustomTypes, customValidators=CustomValidators, config={}):
-		super().__init__(customFormats,customTypes,customValidators,config)
