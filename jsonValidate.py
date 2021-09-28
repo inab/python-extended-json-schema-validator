@@ -47,7 +47,7 @@ def disable_outerr_buffering():
 
 disable_outerr_buffering()
 
-from fairtracks_validator.fairtracks_validator import FairGTracksValidator
+from extended_json_schema_validator.extensible_validator import ExtensibleValidator
 
 if __name__ == "__main__":
 	ap = argparse.ArgumentParser(description="Validate JSON against JSON Schemas with extensions")
@@ -62,8 +62,8 @@ if __name__ == "__main__":
 	grp = ap.add_mutually_exclusive_group()
 	grp.add_argument('--warm-up',dest="warmUp",help="Caches are warmed up on startup", action='store_const', const=True)
 	grp.add_argument('--lazy-load',dest="warmUp",help="Caches are warmed up in a lazy way", action='store_false')
-	ap.add_argument('jsonSchemaDir', metavar='json_schema', help='The JSON Schema file or directory to validate and use')
-	ap.add_argument('json_files', metavar='json_file', nargs='*',help='The JSON files or directories to be validated')
+	ap.add_argument('jsonSchemaDir', metavar='json_schema_or_dir', help='The JSON Schema file or directory to validate and use')
+	ap.add_argument('json_files', metavar='json_file_or_dir', nargs='*',help='The JSON files or directories to be validated')
 	args = ap.parse_args()
 	
 	# First, try loading the configuration file
@@ -82,22 +82,22 @@ if __name__ == "__main__":
 	if cacheDir:
 		os.makedirs(cacheDir, exist_ok=True)
 	
-	fgv = FairGTracksValidator(config=local_config)
+	ev = ExtensibleValidator(config=local_config)
 	
-	numSchemas = fgv.loadJSONSchemas(args.jsonSchemaDir,verbose=args.isVerbose)
+	numSchemas = ev.loadJSONSchemas(args.jsonSchemaDir,verbose=args.isVerbose)
 	
 	if numSchemas > 0:
 		# Should we invalidate caches?
 		if args.invalidate:
 			if args.isVerbose:
 				print("\n* Invalidating caches.")
-			fgv.invalidateCaches()
+			ev.invalidateCaches()
 
 		if args.warmUp:
 			if args.isVerbose:
 				print("\n* Warming up caches...")
 			t0 = time.time()
-			fgv.warmUpCaches()
+			ev.warmUpCaches()
 			t1 = time.time()
 			if args.isVerbose:
 				print("\t{} seconds".format(t1-t0))
@@ -109,7 +109,7 @@ if __name__ == "__main__":
 			sys.exit(1)
 		
 		jsonFiles = tuple(args.json_files)
-		report = fgv.jsonValidate(*jsonFiles,verbose=args.isVerbose)
+		report = ev.jsonValidate(*jsonFiles,verbose=args.isVerbose)
 		
 		if args.reportFilename is not None:
 			if args.isVerbose:

@@ -15,7 +15,7 @@ from .extensions.unique_check import UniqueKey
 from .extensions.pk_check import PrimaryKey
 from .extensions.fk_check import ForeignKey
 
-from .extend_validator import extendValidator , traverseJSONSchema , flattenTraverseListSet, PLAIN_VALIDATOR_MAPPER , REF_FEATURE
+from .extend_validator_helpers import extendValidator , traverseJSONSchema , flattenTraverseListSet, PLAIN_VALIDATOR_MAPPER , REF_FEATURE
 
 class ExtensibleValidator(object):
 	CustomBaseValidators = {
@@ -33,7 +33,7 @@ class ExtensibleValidator(object):
 		SCHEMA_KEY
 	]
 	
-	def __init__(self,customFormats=[], customTypes={}, customValidators=CustomBaseValidators, config={}):
+	def __init__(self, customFormats=[], customTypes={}, customValidators=CustomBaseValidators, config={}, jsonRootTag=None):
 		self.schemaHash = {}
 		self.refSchemaCache = {}
 		self.refSchemaSet = {}
@@ -46,6 +46,7 @@ class ExtensibleValidator(object):
 		self.customTypes = customTypes
 		self.customValidators = customValidators
 		self.config = config
+		self.jsonRootTag = None
 		self.doNotValidateNoId = not bool(config.get('validate-no-id',True))
 	
 	def loadJSONSchemas(self,*args,verbose=None):
@@ -600,7 +601,10 @@ class ExtensibleValidator(object):
 					jsonPossibles[iJsonPossible] = jsonObj
 			
 			# Getting the schema id to locate the proper schema to validate against
-			jsonRoot = jsonDoc['fair_tracks']  if 'fair_tracks' in jsonDoc  else jsonDoc
+			if (self.jsonRootTag is not None) and (self.jsonRootTag in jsonDoc):
+				jsonRoot = jsonDoc[self.jsonRootTag]
+			else:
+				jsonRoot = jsonDoc
 			
 			jsonSchemaId = None
 			for altSchemaKey in self.ALT_SCHEMA_KEYS:

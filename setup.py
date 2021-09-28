@@ -12,7 +12,7 @@ import sys
 setupBaseDir = os.path.dirname(__file__)
 sys.path.insert(0, setupBaseDir)
 
-from fairtracks_validator import version as fairtracks_validator_version
+from extended_json_schema_validator import version as extended_validator_version
 
 # Populating the long description
 with open(os.path.join(setupBaseDir, "README.md"), "r") as fh:
@@ -28,15 +28,15 @@ with open(os.path.join(setupBaseDir, 'requirements.txt')) as f:
 
 
 setuptools.setup(
-	name="fairtracks_validator",
-	version=fairtracks_validator_version,
-	scripts=["fairGTrackJsonValidate.py"],
+	name="extended_json_schema_validator",
+	version=extended_validator_version,
+	scripts=["jsonValidate.py"],
 	author="José Mª Fernández",
 	author_email="jose.m.fernandez@bsc.es",
-	description="FAIRtracks JSON Validator",
+	description="Extended JSON Schema Validator",
 	long_description=long_description,
 	long_description_content_type="text/markdown",
-	url="https://github.com/fairtracks/fairtracks_validator/tree/master/python",
+	url="https://github.com/inab/python-extended-json-schema-validator",
 	packages=setuptools.find_packages(),
 	install_requires=requirements,
 	classifiers=[
