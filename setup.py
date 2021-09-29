@@ -37,6 +37,9 @@ setuptools.setup(
 	long_description=long_description,
 	long_description_content_type="text/markdown",
 	url="https://github.com/inab/python-extended-json-schema-validator",
+	project_urls={
+		"Bug Tracker": "https://github.com/inab/python-extended-json-schema-validator/issues"
+	},
 	packages=setuptools.find_packages(),
 	install_requires=requirements,
 	classifiers=[
@@ -44,4 +47,5 @@ setuptools.setup(
 		"License :: OSI Approved :: GNU Lesser General Public License v2 (LGPLv2)",
 		"Operating System :: OS Independent",
 	],
+	python_requires=">=3.6",
 )
