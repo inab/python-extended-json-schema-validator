@@ -12,7 +12,7 @@ The roots of this code come from [https://github.com/inab/benchmarking-data-mode
 
 Its development was later followed at [https://github.com/fairtracks/fairtracks_validator/], where implementations in other programming languages were also hosted. Python code gained traction and real modularisation there.
 
-As Python code is relevant to several research projects, it has been split from its latest repo, keeping the core and original extensions here at [https://github.com/inab/python-extended-json-schema-validator](https://github.com/inab/python-extended-json-schema-validator), and keeping specific FAIRTracks extensions at [https://github.com/fairtracks/fairtracks_validator_python](https://github.com/fairtracks/fairtracks_validator_python).
+As this Python code is relevant to several research projects, it has been split from its latest repo, keeping the core and original extensions here at [https://github.com/inab/python-extended-json-schema-validator](https://github.com/inab/python-extended-json-schema-validator), and keeping specific FAIRTracks extensions at [https://github.com/fairtracks/fairtracks_validator_python](https://github.com/fairtracks/fairtracks_validator_python).
 
 ## Usage
 
@@ -59,6 +59,9 @@ git clone https://github.com/fairtracks/fairtracks_validator/
 python jsonValidate.py fairtracks_validator/test-data/foreign_key_example/schemas/ fairtracks_validator/test-data/foreign_key_example/good_validation/
 python jsonValidate.py fairtracks_validator/test-data/foreign_key_example/schemas/ fairtracks_validator/test-data/foreign_key_example/bad_validation/
 ```
+
+And this is an asciinema (to be updated) recording a previous version of FAIRTracks Validator:
+
 [![asciicast](https://asciinema.org/a/279252.svg)](https://asciinema.org/a/279252)
 
 
