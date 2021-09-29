@@ -6,6 +6,7 @@ on:
      - v*
 jobs:
   testpypi:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v2
