@@ -34,6 +34,7 @@ setuptools.setup(
 	author="José Mª Fernández",
 	author_email="jose.m.fernandez@bsc.es",
 	description="Extended JSON Schema Validator",
+	license="LGPLv2",
 	long_description=long_description,
 	long_description_content_type="text/markdown",
 	url="https://github.com/inab/python-extended-json-schema-validator",
