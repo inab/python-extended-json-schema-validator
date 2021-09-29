@@ -15,11 +15,11 @@ sys.path.insert(0, setupBaseDir)
 from extended_json_schema_validator import version as extended_validator_version
 
 # Populating the long description
-with open(os.path.join(setupBaseDir, "README.md"), "r") as fh:
+with open(os.path.join(setupBaseDir, "README.md"), "r", encoding="utf-8") as fh:
 	long_description = fh.read()
 
 # Populating the install requirements
-with open(os.path.join(setupBaseDir, 'requirements.txt')) as f:
+with open(os.path.join(setupBaseDir, 'requirements.txt'), "r", encoding="utf-8") as f:
 	requirements = []
 	egg = re.compile(r"#[^#]*egg=([^=&]+)")
 	for line in f.read().splitlines():
