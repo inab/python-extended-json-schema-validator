@@ -48,7 +48,7 @@ class ExtensibleValidator(object):
 		self.customTypes = customTypes
 		self.customValidators = customValidators
 		self.config = config
-		self.jsonRootTag = None
+		self.jsonRootTag = jsonRootTag
 		self.doNotValidateNoId = not bool(config.get('validate-no-id',True))
 	
 	def loadJSONSchemas(self, *args, verbose=None):

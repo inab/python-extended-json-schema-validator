@@ -132,7 +132,7 @@ if __name__ == "__main__":
 		report = ev.jsonValidate(*jsonFiles,verbose=isVerbose)
 		
 		if args.reportFilename is not None:
-			logging.info("\n* Storing JSON report at {}".format(args.reportFilename))
+			logging.info("* Storing JSON report at {}".format(args.reportFilename))
 			if args.isQuietReport:
 				for rep in report:
 					del rep['json']
