@@ -17,7 +17,7 @@ PLAIN_VALIDATOR_MAPPER = {
 }
 
 
-def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidators,config={}, jsonSchemaSource='(unknown)'):
+def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidators,config={}, jsonSchemaSource='(unknown)', isRW=True):
 	extendedValidators = validator.VALIDATORS.copy()
 	customValidatorsInstances = []
 	
@@ -30,7 +30,7 @@ def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidator
 		
 		# Now, populating
 		for dynamicValidatorClass in inputCustomValidators[None]:
-			dynamicValidator = dynamicValidatorClass(schemaURI,jsonSchemaSource,config)
+			dynamicValidator = dynamicValidatorClass(schemaURI,jsonSchemaSource, config=config, isRW=isRW)
 			customValidatorsInstances.append(dynamicValidator)
 			
 			for triggerAttribute,triggeredValidation in dynamicValidator.getValidators():
@@ -61,9 +61,9 @@ def traverseJSONSchema(jsonObj, schemaURI=None, keys=set(), fragment=None, refSc
 	# Should we try getting it?
 	if schemaURI is None:
 		if isinstance(jsonObj,dict):
-			startingSchemaURI = j.get('$id')
+			startingSchemaURI = jsonObj.get('$id')
 			if startingSchemaURI is None:
-				startingSchemaURI = j.get('id')
+				startingSchemaURI = jsonObj.get('id')
 			
 			# End / fail fast
 			if startingSchemaURI is None:

@@ -11,14 +11,8 @@ import sys
 import re
 import json
 
-if sys.version_info[0] > 2:
-	ALLOWED_KEY_TYPES=(bytes,str)
-	ALLOWED_ATOMIC_VALUE_TYPES=(int,bytes,str,float,bool,type(None))
-	# py3k
-	pass
-else:
-	ALLOWED_KEY_TYPES=(str,unicode)
-	ALLOWED_ATOMIC_VALUE_TYPES=(int,long,str,unicode,float,bool,type(None))
+ALLOWED_KEY_TYPES=(bytes,str)
+ALLOWED_ATOMIC_VALUE_TYPES=(int,bytes,str,float,bool,type(None))
 
 UniqueLoc = namedtuple('UniqueLoc',['schemaURI','path'])
 UniqueDef = namedtuple('UniqueDef',['uniqueLoc','members','values'])
@@ -28,8 +22,8 @@ class UniqueKey(AbstractCustomFeatureValidator):
 	SchemaErrorReason = 'dup_unique'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self,schemaURI,jsonSchemaSource='(unknown)',config={}):
-		super().__init__(schemaURI,jsonSchemaSource,config)
+	def __init__(self, schemaURI, jsonSchemaSource='(unknown)', config={}, isRW=True):
+		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
 		self.UniqueWorld = dict()
 	
 	@property

@@ -64,7 +64,9 @@ if __name__ == "__main__":
 	ap.add_argument('--report',dest="reportFilename",help="Store validation report (in JSON format) in a file")
 	ap.add_argument('--verbose-report',dest="isQuietReport",help="When this flag is enabled, the report also embeds the json contents which were validated", action='store_false', default=True)
 	
-	ap.add_argument('--invalidate',help="Caches are invalidated on startup", action='store_true')
+	grp0 = ap.add_mutually_exclusive_group()
+	grp0.add_argument('--invalidate', help="Caches are invalidated on startup", action='store_true')
+	grp0.add_argument('--read-only', dest="isRWCache",help="When this flag is enabled, the caches are read-only, avoiding expensive operations related to the caches", action='store_false', default=True)
 	grp = ap.add_mutually_exclusive_group()
 	grp.add_argument('--warm-up',dest="warmUp",help="Caches are warmed up on startup", action='store_const', const=True)
 	grp.add_argument('--lazy-load',dest="warmUp",help="Caches are warmed up in a lazy way", action='store_false')
@@ -104,7 +106,7 @@ if __name__ == "__main__":
 	if cacheDir:
 		os.makedirs(cacheDir, exist_ok=True)
 	
-	ev = ExtensibleValidator(config=local_config)
+	ev = ExtensibleValidator(config=local_config, isRW=args.isRWCache)
 	
 	isVerbose = logLevel <= logging.INFO
 	numSchemas = ev.loadJSONSchemas(args.jsonSchemaDir, verbose=isVerbose)
@@ -125,7 +127,7 @@ if __name__ == "__main__":
 			
 	if len(sys.argv) > 2:
 		if numSchemas == 0:
-			logging.critical("FATAL ERROR: No schema was successfuly loaded. Exiting...\n")
+			logging.critical("FATAL ERROR: No schema was successfully loaded. Exiting...\n")
 			sys.exit(1)
 		
 		jsonFiles = tuple(args.json_files)

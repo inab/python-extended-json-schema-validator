@@ -10,12 +10,13 @@ import logging
 CheckContext = namedtuple('CheckContext',['schemaURI','context'])
 
 class AbstractCustomFeatureValidator(abc.ABC):
-	def __init__(self, schemaURI, jsonSchemaSource='(unknown)', config = {}):
+	def __init__(self, schemaURI, jsonSchemaSource='(unknown)', config = {}, isRW = True):
 		self.logger = logging.getLogger(self.__class__.__name__)
 		
 		self.schemaURI = schemaURI
 		self.jsonSchemaSource = jsonSchemaSource
 		self.config = config
+		self.isRW = isRW
 		self.bootstrapMessages = None
 		self.currentJSONFile = '(unset)'
 

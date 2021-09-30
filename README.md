@@ -21,11 +21,11 @@ python jsonValidate.py --help
 ```
 ```
 usage: jsonValidate.py [-h] [--log-file LOGFILENAME] [--log-format LOGFORMAT] [-q] [-v] [-d] [-C CONFIGFILENAME]
-                       [--cache-dir CACHEDIR] [--report REPORTFILENAME] [--verbose-report] [--invalidate]
+                       [--cache-dir CACHEDIR] [--report REPORTFILENAME] [--verbose-report] [--invalidate | --read-only]
                        [--warm-up | --lazy-load] [-V]
                        json_schema_or_dir [json_file_or_dir [json_file_or_dir ...]]
 
-Validate JSON against JSON Schemas with extensions (version 0.9.7)
+Validate JSON against JSON Schemas with extensions (version 0.9.9)
 
 positional arguments:
   json_schema_or_dir    The JSON Schema file or directory to validate and use
@@ -47,6 +47,7 @@ optional arguments:
                         Store validation report (in JSON format) in a file
   --verbose-report      When this flag is enabled, the report also embeds the json contents which were validated
   --invalidate          Caches are invalidated on startup
+  --read-only           When this flag is enabled, the caches are read-only, avoiding expensive operations related to the caches
   --warm-up             Caches are warmed up on startup
   --lazy-load           Caches are warmed up in a lazy way
   -V, --version         show program's version number and exit

@@ -33,7 +33,7 @@ class ExtensibleValidator(object):
 		SCHEMA_KEY
 	]
 	
-	def __init__(self, customFormats=[], customTypes={}, customValidators=CustomBaseValidators, config={}, jsonRootTag=None):
+	def __init__(self, customFormats=[], customTypes={}, customValidators=CustomBaseValidators, config={}, jsonRootTag=None, isRW = True):
 		self.logger = logging.getLogger(self.__class__.__name__)
 		
 		self.schemaHash = {}
@@ -49,6 +49,7 @@ class ExtensibleValidator(object):
 		self.customValidators = customValidators
 		self.config = config
 		self.jsonRootTag = jsonRootTag
+		self.isRW = isRW
 		self.doNotValidateNoId = not bool(config.get('validate-no-id',True))
 	
 	def loadJSONSchemas(self, *args, verbose=None):
@@ -201,7 +202,7 @@ class ExtensibleValidator(object):
 			idKey = '$id'  if '$id' in jsonSchema else 'id'
 			jsonSchemaURI = jsonSchema.get(idKey)
 			
-			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators, config=self.config, jsonSchemaSource=jsonSchemaFile)
+			validator , customFormatInstances = extendValidator(jsonSchemaURI, plain_validator, self.customTypes, self.customValidators, config=self.config, jsonSchemaSource=jsonSchemaFile, isRW=self.isRW)
 			
 			schemaObj['customFormatInstances'] = customFormatInstances
 			schemaObj['validator'] = validator
