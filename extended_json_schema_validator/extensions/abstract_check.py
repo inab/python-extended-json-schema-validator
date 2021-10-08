@@ -29,6 +29,7 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	CacheSubdir = None
 	CachePathProp = None
 	CacheProp = None
+	TempCachePath = None
 	
 	@classmethod
 	def GetCachePath(cls, cachePath = None):
@@ -50,13 +51,20 @@ class AbstractCustomFeatureValidator(abc.ABC):
 					doTempDir = True
 			
 			if doTempDir:
-				# The temporary directory should be
-				# removed when the application using this
-				# class finishes
-				#cachePath = tempfile.mkdtemp(prefix="term", suffix="cache")
-				#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
-				cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
-				os.makedirs(cachePath, exist_ok=True)
+				if cls.TempCachePath is None:
+					# The temporary directory should be
+					# removed when the application using this
+					# class finishes
+					#cachePath = tempfile.mkdtemp(prefix="term", suffix="cache")
+					#atexit.register(shutil.rmtree, cachePath, ignore_errors=True)
+					cachePath = os.path.join(tempfile.gettempdir(),'cache_es.elixir.jsonValidator')
+					os.makedirs(cachePath, exist_ok=True)
+					# This is needed to avoid creating several
+					# temporary directories, one for each
+					# extension, when cachePath is None
+					cls.TempCachePath = cachePath
+				else:
+					cachePath = cls.TempCachePath
 			
 			# Does it need its own directory?
 			if cls.CacheSubdir is not None:
@@ -81,9 +89,12 @@ class AbstractCustomFeatureValidator(abc.ABC):
 			del cache
 		
 		if cls.CachePathProp is not None:
-			cachePath = cls.GetCachePath(cachePath=cachePath)
+			rmCachePath = cls.GetCachePath(cachePath=cachePath)
 			delattr(cls, cls.CachePathProp)
-			shutil.rmtree(cachePath, ignore_errors=True)
+			shutil.rmtree(rmCachePath, ignore_errors=True)
+			
+			# This second call assures the directory is again created
+			cls.GetCachePath(cachePath=cachePath)
 	
 	@abc.abstractmethod
 	def validate(self,validator,schema_attr_val,value,schema):
