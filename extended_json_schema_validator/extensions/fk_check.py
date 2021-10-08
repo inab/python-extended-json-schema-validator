@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from collections import namedtuple
+from typing import List, NamedTuple, Union
 
 from .abstract_check import AbstractCustomFeatureValidator
 from .unique_check import ALLOWED_KEY_TYPES, ALLOWED_ATOMIC_VALUE_TYPES
@@ -17,9 +17,19 @@ import json
 
 import uritools
 
-FKLoc = namedtuple('FKLoc',['schemaURI','refSchemaURI','path','values'])
-FKDef = namedtuple('FKDef',['fkLoc','members'])
-FKVal = namedtuple('FKVal',['value','where'])
+class FKVal(NamedTuple):
+	value: Union[str, int, float, bool]
+	where: str	# the JSON file where it happens
+
+class FKLoc(NamedTuple):
+	schemaURI: str
+	refSchemaURI: str
+	path: str
+	values: List[FKVal]
+
+class FKDef(NamedTuple):
+	fkLoc: FKLoc
+	members: List[str]
 
 class ForeignKey(AbstractCustomFeatureValidator):
 	KeyAttributeName = 'foreign_keys'
