@@ -10,6 +10,8 @@ import logging
 import uritools
 import hashlib
 
+from typing import List, Any, Iterator
+
 # Augmenting the supported types
 from .extensions.unique_check import UniqueKey
 from .extensions.pk_check import PrimaryKey
@@ -465,7 +467,22 @@ class ExtensibleValidator(object):
 		
 		return hashlib.sha1(json_canon.encode('utf-8')).hexdigest()
 	
-	def jsonValidate(self,*args, verbose=None):
+	def jsonValidateIter(self, *args, verbose=None) -> Iterator[Any]:
+		"""
+		This method validates a given list of JSON contents.
+		These contents can be either already in memory, or
+		files. The in memory contents are dictionaries with
+		three keys: `json`, `errors` and `file`. The first
+		one will contain the content to be validated, the second
+		one is an array of errors (originally empty) and the last
+		is a symbolic name, which could be either a real filename
+		or other meaning.
+		
+		It returns an iterator of dictionaries, each one
+		corresponding to each validated input, which will have
+		the very same `json`, `errors` and `file` keys, already
+		described above.
+		"""
 		p_schemaHash = self.schemaHash
 		
 		if verbose:
@@ -516,7 +533,8 @@ class ExtensibleValidator(object):
 					
 					# For the report
 					jsonObj.setDefault('errors',[{'reason': 'ignored', 'description': 'Programming error: uninitialized error structures'}])
-					report.append(jsonObj)
+					#report.append(jsonObj)
+					yield jsonObj
 					
 					# Masking it for the pass 2 loop
 					jsonPossibles[iJsonPossible] = None
@@ -532,7 +550,8 @@ class ExtensibleValidator(object):
 					numFileIgnore += 1
 					
 					# For the report
-					report.append(jsonObj)
+					#report.append(jsonObj)
+					yield jsonObj
 					
 					# Masking it for the pass 2 loop
 					jsonPossibles[iJsonPossible] = None
@@ -555,7 +574,8 @@ class ExtensibleValidator(object):
 					numDirOK += 1
 				except IOError as ioe:
 					self.logger.critical("FATAL ERROR: Unable to open/process JSON directory {0}. Reason: {1}".format(jsonDir,ioe.strerror))
-					report.append({'file': jsonDir,'errors': [{'reason': 'fatal', 'description': 'Unable to open/process JSON directory'}]})
+					#report.append({'file': jsonDir,'errors': [{'reason': 'fatal', 'description': 'Unable to open/process JSON directory'}]})
+					yield {'file': jsonDir,'errors': [{'reason': 'fatal', 'description': 'Unable to open/process JSON directory'}]}
 					numDirFail += 1
 				finally:
 					# Masking it for the pass 2 loop
@@ -572,7 +592,8 @@ class ExtensibleValidator(object):
 				except IOError as ioe:
 					self.logger.error("\t- ERROR: Unable to open file {0}. Reason: {1}".format(jsonFile,ioe.strerror))
 					# Masking it for the next loop
-					report.append({'file': jsonFile,'errors': [{'reason': 'fatal', 'description': 'Unable to open/parse JSON file'}]})
+					# report.append({'file': jsonFile,'errors': [{'reason': 'fatal', 'description': 'Unable to open/parse JSON file'}]})
+					yield {'file': jsonFile,'errors': [{'reason': 'fatal', 'description': 'Unable to open/parse JSON file'}]}
 					jsonPossibles[iJsonPossible] = None
 					numFilePass1Fail += 1
 					continue
@@ -643,7 +664,8 @@ class ExtensibleValidator(object):
 							})
 						
 						# Masking it for the next loop
-						report.append(jsonPossibles[iJsonPossible])
+						# report.append(jsonPossibles[iJsonPossible])
+						yield jsonPossibles[iJsonPossible]
 						jsonPossibles[iJsonPossible] = None
 						numFilePass1Fail += 1
 					else:
@@ -659,7 +681,8 @@ class ExtensibleValidator(object):
 						'description': "Schema with URI {0} was not loaded".format(jsonSchemaId)
 					})
 					# Masking it for the next loop
-					report.append(jsonPossibles[iJsonPossible])
+					# report.append(jsonPossibles[iJsonPossible])
+					yield jsonPossibles[iJsonPossible]
 					jsonPossibles[iJsonPossible] = None
 					numFilePass1Ignore += 1
 			else:
@@ -669,7 +692,8 @@ class ExtensibleValidator(object):
 					'description': "No hint to identify the correct JSON Schema to be used to validate"
 				})
 				# Masking it for the next loop
-				report.append(jsonPossibles[iJsonPossible])
+				# report.append(jsonPossibles[iJsonPossible])
+				yield jsonPossibles[iJsonPossible]
 				jsonPossibles[iJsonPossible] = None
 				numFilePass1Ignore += 1
 		
@@ -694,7 +718,7 @@ class ExtensibleValidator(object):
 					continue
 				
 				# Adding this survivor to the report
-				report.append(jsonObj)
+				# report.append(jsonObj)
 				jsonFile = jsonObj['file']
 				self.logger.log(logLevel, "* Additional checks on {0}".format(jsonFile))
 				
@@ -705,9 +729,28 @@ class ExtensibleValidator(object):
 					self.logger.error("\n".join(map(lambda e: "\t\tPath: {0} . Message: {1}".format(e['path'],e['description']), errorList)))
 				else:
 					self.logger.log(logLevel, "\t- Validated!")
+				
+				yield jsonObj
 		else:
 			self.logger.log(logLevel, "PASS 2: (skipped)")
 		
 		self.logger.log(logLevel, "VALIDATION STATS:\n\t- directories ({0} OK, {1} failed)\n\t- File PASS 1 ({2} OK, {3} ignored, {4} error)\n\t- File PASS 2 ({5} OK, {6} error)".format(numDirOK,numDirFail,numFilePass1OK,numFilePass1Ignore,numFilePass1Fail,numFilePass2OK,numFilePass2Fail))
+
+	def jsonValidate(self,*args, verbose=None) -> List[Any]:
+		"""
+		This method validates a given list of JSON contents.
+		These contents can be either already in memory, or
+		files. The in memory contents are dictionaries with
+		three keys: `json`, `errors` and `file`. The first
+		one will contain the content to be validated, the second
+		one is an array of errors (originally empty) and the last
+		is a symbolic name, which could be either a real filename
+		or other meaning.
 		
-		return report
+		It returns a list of dictionaries, each one
+		corresponding to each validated input, which will have
+		the very same `json`, `errors` and `file` keys, already
+		described above.
+		"""
+		
+		return list(self.jsonValidateIter(verbose=verbose,*args))
