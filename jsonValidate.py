@@ -7,6 +7,8 @@ import argparse
 import logging
 import time
 import json
+import jsonpath_ng
+import jsonpath_ng.ext
 
 import yaml
 # We have preference for the C based loader and dumper, but the code
@@ -62,7 +64,9 @@ if __name__ == "__main__":
 	ap.add_argument('--cache-dir',dest="cacheDir",help="Caching directory (used by extensions)")
 	
 	ap.add_argument('--report',dest="reportFilename",help="Store validation report (in JSON format) in a file")
+	ap.add_argument('--annotation',dest="annotReport",help="JSON Path (accepted by jsonpath-ng) to extract an annotation to include from validated JSON in the report (for instance, '$._id')")
 	ap.add_argument('--verbose-report',dest="isQuietReport",help="When this flag is enabled, the report also embeds the json contents which were validated", action='store_false', default=True)
+	ap.add_argument('--error-report',dest="isErrorReport",help="When this flag is enabled, the report only includes the entries with errors", action='store_true', default=False)
 	
 	grp0 = ap.add_mutually_exclusive_group()
 	grp0.add_argument('--invalidate', help="Caches are invalidated on startup", action='store_true')
@@ -131,20 +135,40 @@ if __name__ == "__main__":
 			sys.exit(1)
 		
 		jsonFiles = tuple(args.json_files)
-		report = ev.jsonValidate(*jsonFiles,verbose=isVerbose)
-		
-		if args.reportFilename is not None:
-			logging.info("* Storing JSON report at {}".format(args.reportFilename))
-			if args.isQuietReport:
-				for rep in report:
-					del rep['json']
-			with open(args.reportFilename,mode='w',encoding='utf-8') as repH:
-				json.dump(report,repH,indent=4,sort_keys=True)
+		reportIter = ev.jsonValidateIter(*jsonFiles,verbose=isVerbose)
 		
 		exitCode = 0
-		for rep in report:
-			if len(rep['errors']) > 0:
-				exitCode = 2
-				break
+		if args.reportFilename is not None:
+			logging.info("* Storing JSON report at {}".format(args.reportFilename))
+			
+			if args.annotReport:
+				annotP = jsonpath_ng.ext.parse(args.annotReport)
+			else:
+				annotP = None
+			
+			report = []
+			for rep in reportIter:
+				if len(rep['errors']) > 0:
+					exitCode = 2
+				elif args.isErrorReport:
+					continue
+				
+				if annotP is not None:
+					for match in annotP.find(rep['json']):
+						rep['annot'] = match.value
+						break
+				if args.isQuietReport:
+					del rep['json']
+				
+				report.append(rep)
+			with open(args.reportFilename,mode='w',encoding='utf-8') as repH:
+				json.dump(report,repH,indent=4,sort_keys=True)
+		else:
+			for rep in reportIter:
+				if len(rep['errors']) > 0:
+					exitCode = 2
+					break
+		
+		reportIter.close()
 		
 		sys.exit(exitCode)
