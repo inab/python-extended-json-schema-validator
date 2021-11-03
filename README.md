@@ -21,11 +21,11 @@ python jsonValidate.py --help
 ```
 ```
 usage: jsonValidate.py [-h] [--log-file LOGFILENAME] [--log-format LOGFORMAT] [-q] [-v] [-d] [-C CONFIGFILENAME]
-                       [--cache-dir CACHEDIR] [--report REPORTFILENAME] [--verbose-report] [--invalidate | --read-only]
-                       [--warm-up | --lazy-load] [-V]
+                       [--cache-dir CACHEDIR] [--report REPORTFILENAME] [--annotation ANNOTREPORT] [--verbose-report]
+                       [--error-report] [--invalidate | --read-only] [--warm-up | --lazy-load] [-V]
                        json_schema_or_dir [json_file_or_dir [json_file_or_dir ...]]
 
-Validate JSON against JSON Schemas with extensions (version 0.9.9)
+Validate JSON against JSON Schemas with extensions (version 0.9.12)
 
 positional arguments:
   json_schema_or_dir    The JSON Schema file or directory to validate and use
@@ -45,7 +45,11 @@ optional arguments:
   --cache-dir CACHEDIR  Caching directory (used by extensions)
   --report REPORTFILENAME
                         Store validation report (in JSON format) in a file
+  --annotation ANNOTREPORT
+                        JSON Path (accepted by jsonpath-ng) to extract an annotation to include from validated JSON in the
+                        report (for instance, '$._id')
   --verbose-report      When this flag is enabled, the report also embeds the json contents which were validated
+  --error-report        When this flag is enabled, the report only includes the entries with errors
   --invalidate          Caches are invalidated on startup
   --read-only           When this flag is enabled, the caches are read-only, avoiding expensive operations related to the caches
   --warm-up             Caches are warmed up on startup
