@@ -42,6 +42,12 @@ setuptools.setup(
 		"Bug Tracker": "https://github.com/inab/python-extended-json-schema-validator/issues"
 	},
 	packages=setuptools.find_packages(),
+	package_data={
+		'extended_json_schema_validator': [
+			'README-extensions.md',
+			'test-data'
+		]
+	},
 	install_requires=requirements,
 	classifiers=[
 		"Programming Language :: Python :: 3",

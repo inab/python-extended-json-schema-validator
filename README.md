@@ -14,6 +14,10 @@ Its development was later followed at [https://github.com/fairtracks/fairtracks_
 
 As this Python code is relevant to several research projects, it has been split from its latest repo, keeping the core and original extensions here at [https://github.com/inab/python-extended-json-schema-validator](https://github.com/inab/python-extended-json-schema-validator), and keeping specific FAIRTracks extensions at [https://github.com/fairtracks/fairtracks_validator_python](https://github.com/fairtracks/fairtracks_validator_python).
 
+## Extensions
+
+A description of the base JSON Schema extensions implemented in this repository is available at [README-extensions.md](README-extensions.md).
+
 ## Usage
 
 ```bash

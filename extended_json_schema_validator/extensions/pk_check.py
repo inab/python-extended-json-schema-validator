@@ -5,6 +5,8 @@ from jsonschema.exceptions import FormatError, ValidationError
 
 from .unique_check import UniqueKey, UniqueDef, UniqueLoc, ALLOWED_KEY_TYPES, ALLOWED_ATOMIC_VALUE_TYPES
 
+from .abstract_check import CheckContext
+
 import sys
 import re
 import json
@@ -25,6 +27,7 @@ class PrimaryKey(UniqueKey):
 		self.doPopulate = False
 		self.gotIdsSet = None
 		self.warmedUp = False
+		self.PopulatedPKWorld = dict()
 	
 	@property
 	def triggerAttribute(self):
@@ -96,15 +99,20 @@ class PrimaryKey(UniqueKey):
 						except:
 							self.logger.exception("ERROR: Unable to parse remote keys data from "+compURL)
 	
-	def doDefaultPopulation(self):
+	def doDefaultPopulation(self, unique_id=-1, unique_state=[]):
 		if self.doPopulate:
 			# Deactivate future populations
 			self.doPopulate = False
 			
-			unique_id = -1
 			if self.gotIdsSet:
 				# The common dictionary for this declaration where all the unique values are kept
-				uniqueDef = self.UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=[],values=dict()))
+				allow_provider_duplicates = self.config.get(self.KeyAttributeName).get('allow_provider_duplicates', False)
+				if allow_provider_duplicates:
+					UniqueWorld = self.PopulatedPKWorld
+				else:
+					UniqueWorld = self.UniqueWorld
+				
+				uniqueDef = UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=unique_state,values=dict()))
 				uniqueSet = uniqueDef.values
 				
 				# Should it complain about this?
@@ -124,21 +132,7 @@ class PrimaryKey(UniqueKey):
 			# Needed to populate the cache of ids
 			# and the unicity check
 			unique_id = id(schema)
-			if self.doPopulate:
-				# Deactivate future populations
-				self.doPopulate = False
-				if self.gotIdsSet:
-					# The common dictionary for this declaration where all the unique values are kept
-					uniqueDef = self.UniqueWorld.setdefault(unique_id,UniqueDef(uniqueLoc=UniqueLoc(schemaURI=self.schemaURI,path='(unknown)'),members=unique_state,values=dict()))
-					uniqueSet = uniqueDef.values
-					
-					# Should it complain about this?
-					for compURL, gotIds in self.gotIdsSet.items():
-						for theValue in gotIds:
-							if theValue in uniqueSet:
-								yield ValidationError("Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(self.triggerAttribute, theValue,uniqueSet[theValue]),validator_value={"reason": self._errorReason})
-							else:
-								uniqueSet[theValue] = compURL
+			self.doDefaultPopulation(unique_id=unique_id, unique_state=unique_state)
 			
 			if isinstance(unique_state,list):
 				obtainedValues = self.GetKeyValues(value,unique_state)
@@ -168,7 +162,10 @@ class PrimaryKey(UniqueKey):
 		self.warmUpCaches()
 		self.doDefaultPopulation()
 		
-		return super().getContext()
+		ConsolidatedUniqueWorld = self.PopulatedPKWorld.copy()
+		ConsolidatedUniqueWorld.update(self.UniqueWorld)
+		
+		return CheckContext(schemaURI = self.schemaURI, context = ConsolidatedUniqueWorld)
 	
 	def invalidateCaches(self):
 		self.warmedUp = False
