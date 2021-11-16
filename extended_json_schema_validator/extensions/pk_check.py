@@ -162,8 +162,24 @@ class PrimaryKey(UniqueKey):
 		self.warmUpCaches()
 		self.doDefaultPopulation()
 		
-		ConsolidatedUniqueWorld = self.PopulatedPKWorld.copy()
-		ConsolidatedUniqueWorld.update(self.UniqueWorld)
+		if len(self.PopulatedPKWorld) > 0:
+			ConsolidatedUniqueWorld = self.PopulatedPKWorld.copy()
+			
+			for unique_id, uniqueDef in self.UniqueWorld.items():
+				baseUniqueDef = ConsolidatedUniqueWorld.get(unique_id)
+				if baseUniqueDef is None:
+					ConsolidatedUniqueWorld[unique_id] = uniqueDef
+				else:
+					newUniqueSet = baseUniqueDef.values.copy()
+					newUniqueSet.update(uniqueDef.values)
+					newUniqueDef = UniqueDef(
+						uniqueLoc=baseUniqueDef.uniqueLoc,
+						members=baseUniqueDef.members,
+						values=newUniqueSet
+					)
+					ConsolidatedUniqueWorld[unique_id] = newUniqueDef
+		else:
+			ConsolidatedUniqueWorld = self.UniqueWorld
 		
 		return CheckContext(schemaURI = self.schemaURI, context = ConsolidatedUniqueWorld)
 	
