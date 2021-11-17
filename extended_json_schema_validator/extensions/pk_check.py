@@ -88,7 +88,7 @@ class PrimaryKey(UniqueKey):
 						try:
 							with urlopen(r) as f:
 								if f.getcode() == 200:
-									gotIds = str(f.read(),'utf-8').split()
+									gotIds = str(f.read(),'utf-8').split("\n")
 									if gotIds:
 										self.gotIdsSet[compURL] = gotIds
 										self.doPopulate = True
