@@ -143,7 +143,7 @@ class ExtensibleValidator(object):
 			# schemaObj = None
 			
 			if isinstance(jsonSchemaPossible,dict):
-				schemaObj = cast("SchemaHashEntry", jsonSchemaPossible)
+				schemaObj: "SchemaHashEntry" = jsonSchemaPossible
 				errors = schemaObj.get('errors')
 				if errors is None:
 					self.logger.log(logLevel, "\tIGNORE: cached schema does not have the mandatory 'errors' attribute, so it cannot be processed")
