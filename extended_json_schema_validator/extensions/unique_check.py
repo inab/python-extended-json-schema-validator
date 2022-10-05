@@ -1,37 +1,64 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from collections import namedtuple
+import json
+import re
+
+from jsonschema.exceptions import ValidationError
 
 from .abstract_check import AbstractCustomFeatureValidator, CheckContext
-
-from jsonschema.exceptions import FormatError, ValidationError
-
-import sys
-import re
-import json
 
 ALLOWED_KEY_TYPES=(bytes,str)
 ALLOWED_ATOMIC_VALUE_TYPES=(int,bytes,str,float,bool,type(None))
 
-UniqueLoc = namedtuple('UniqueLoc',['schemaURI','path'])
-UniqueDef = namedtuple('UniqueDef',['uniqueLoc','members','values'])
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+	from typing import (
+		Any,
+		Iterator,
+		Mapping,
+		MutableMapping,
+		MutableSequence,
+		Optional,
+		Sequence,
+		Tuple,
+		Union,
+	)
+
+	import jsonschema as JSV
+	from typing_extensions import Final
+
+	from .abstract_check import (
+		BootstrapErrorDict,
+		FeatureValidatorConfig,
+		RefSchemaTuple,
+	)
+
+class UniqueLoc(NamedTuple):
+	schemaURI: str
+	path: str
+
+class UniqueDef(NamedTuple):
+	uniqueLoc: UniqueLoc
+	members: "Union[bool, Sequence[str]]"
+	values: "MutableMapping[str, str]"
 
 class UniqueKey(AbstractCustomFeatureValidator):
-	KeyAttributeName = 'unique'
-	SchemaErrorReason = 'dup_unique'
+	KeyAttributeNameUK: "Final[str]" = 'unique'
+	SchemaErrorReasonUK: "Final[str]" = 'dup_unique'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self, schemaURI, jsonSchemaSource='(unknown)', config={}, isRW=True):
+	def __init__(self, schemaURI: str, jsonSchemaSource: str = '(unknown)', config: "FeatureValidatorConfig" = {}, isRW: bool = True):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
-		self.UniqueWorld = dict()
+		self.UniqueWorld: "MutableMapping[int, Any]" = dict()
 	
 	@property
-	def triggerAttribute(self):
-		return self.KeyAttributeName
+	def triggerAttribute(self) -> str:
+		return self.KeyAttributeNameUK
 	
 	@property
-	def triggerJSONSchemaDef(self):
+	def triggerJSONSchemaDef(self) -> "Mapping[str, Any]":
 		return {
 			self.triggerAttribute : {
 				"oneOf": [
@@ -52,21 +79,21 @@ class UniqueKey(AbstractCustomFeatureValidator):
 		}
 	
 	@property
-	def _errorReason(self):
-		return self.SchemaErrorReason
+	def _errorReason(self) -> str:
+		return self.SchemaErrorReasonUK
 	
 	@property
-	def needsBootstrapping(self):
+	def needsBootstrapping(self) -> bool:
 		return True
 	
-	def bootstrap(self, refSchemaTuple = tuple()):
+	def bootstrap(self, refSchemaTuple: "RefSchemaTuple" = ({},{},{})) ->  "Sequence[BootstrapErrorDict]":
 		(id2ElemId , keyRefs , _) = refSchemaTuple
 		
 		keyList = keyRefs[self.triggerAttribute]
 		# Saving the unique locations
 		# based on information from FeatureLoc elems
 		for loc in keyList:
-			uLoc = UniqueLoc(schemaURI=loc.schemaURI,path=loc.path)
+			uLoc = UniqueLoc(schemaURI=loc.schemaURI, path=loc.path)
 			uId = id(loc.context)
 			
 			uDef = self.UniqueWorld.get(uId)
@@ -83,8 +110,8 @@ class UniqueKey(AbstractCustomFeatureValidator):
 	JStepPat = re.compile(r"^([^\[]+)\[(0|[1-9][0-9]+)?\]$")
 
 	@classmethod
-	def MaterializeJPath(cls,jsonDoc, jPath):
-		objectives = [ jsonDoc ]
+	def MaterializeJPath(cls, jsonDoc: "Any", jPath: str) -> "Sequence[Any]":
+		objectives: "MutableSequence[Any]" = [ jsonDoc ]
 		jSteps = jPath.split('.') if jPath not in ('.','') else (None,)
 		for jStep in jSteps:
 			newObjectives = []
@@ -138,32 +165,32 @@ class UniqueKey(AbstractCustomFeatureValidator):
 
 	# It fetches the values from a JSON, based on the given paths to the members of the key
 	@classmethod
-	def GetKeyValues(cls,jsonDoc,p_members):
-		return tuple(cls.MaterializeJPath(jsonDoc,member) for member in p_members)
+	def GetKeyValues(cls, jsonDoc: "Any", p_members: "Sequence[str]") -> "Tuple[Any, ...]":
+		return tuple(cls.MaterializeJPath(jsonDoc, member) for member in p_members)
 
 	@classmethod
-	def _aggPKhelper(cls,basePK,curPKvalue):
+	def _aggPKhelper(cls, basePK: "Sequence[Any]", curPKvalue: "Any") -> "Sequence[Any]":
 		newPK = list(basePK)
 		newPK.append(curPKvalue)
 		return newPK
 
 	# It generates unique strings from a set of values
 	@classmethod
-	def GenKeyStrings(cls,keyTuple):
+	def GenKeyStrings(cls, keyTuple: "Tuple[Sequence[Any], ...]") -> "Tuple[str, ...]":
 		numPKcols = len(keyTuple)
 		if numPKcols == 0:
-			return []
+			return tuple()
 		
 		# Exiting in case some of the inputs is undefined
 		for curPKvalues in keyTuple:
 			# If there is no found value, generate nothing
 			if not isinstance(curPKvalues,(list, tuple)) or len(curPKvalues) == 0:
-				return []
+				return tuple()
 		
-		pkStrings = list(map(lambda elem: [ elem ], keyTuple[0]))
+		pkStrings: "MutableSequence[Any]" = list(map(lambda elem: [ elem ], keyTuple[0]))
 		
 		for curPKvalues in keyTuple[1:]:
-			newPKstrings = []
+			newPKstrings: "MutableSequence[Any]" = []
 			
 			for curPKvalue in curPKvalues:
 				newPKstrings.extend(map(lambda basePK: cls._aggPKhelper(basePK,curPKvalue) , pkStrings))
@@ -172,7 +199,7 @@ class UniqueKey(AbstractCustomFeatureValidator):
 		
 		return tuple(map(lambda pkString: json.dumps(pkString, sort_keys=True, separators=(',',':')) , pkStrings))
 
-	def validate(self,validator,unique_state,value,schema):
+	def validate(self, validator: "JSV.validators._Validator", unique_state: "Any", value: "Any", schema: "Any") ->  "Iterator[ValidationError]":
 		if unique_state:
 			# Check the unicity
 			unique_id = id(schema)
@@ -180,12 +207,13 @@ class UniqueKey(AbstractCustomFeatureValidator):
 			if isinstance(unique_state,list):
 				obtainedValues = self.GetKeyValues(value,unique_state)
 			else:
-				obtainedValues = [(value,)]
+				obtainedValues = ([value],)
 			
 			isAtomicValue = len(obtainedValues) == 1 and len(obtainedValues[0]) == 1 and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
 			
+			theValues: "Tuple[Union[str, int, float, bool, None], ...]"
 			if isAtomicValue:
-				theValues = [ obtainedValues[0][0] ]
+				theValues = ( obtainedValues[0][0], )
 			else:
 				theValues = self.GenKeyStrings(obtainedValues)
 			
@@ -200,10 +228,10 @@ class UniqueKey(AbstractCustomFeatureValidator):
 				else:
 					uniqueSet[theValue] = self.currentJSONFile
 	
-	def getContext(self):
+	def getContext(self) -> "Optional[CheckContext]":
 		return CheckContext(schemaURI = self.schemaURI, context = self.UniqueWorld)
 	
-	def cleanup(self):
+	def cleanup(self) -> None:
 		# In order to not destroying the bootstrapping work
 		# only remove the recorded values
 		for uDef in self.UniqueWorld.values():

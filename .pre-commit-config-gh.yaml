@@ -1,0 +1,40 @@
+fail_fast: true
+
+repos:
+  - repo: https://github.com/PyCQA/pylint
+    rev: v2.15.2
+    hooks:
+      - id: pylint
+        args: [--disable=all, --enable=unused-import]
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: Local MyPy
+        language: system
+        types: [file, python]
+#        files: \.py$
+        exclude: "^[^/]*env/|dev-[^/]*/"
+        require_serial: true
+        entry: mypy --strict
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.10.1
+    hooks:
+      - id: isort
+        exclude: "^[^/]*env/|dev-[^/]*/"
+        args: [--diff, --check, --color]
+        additional_dependencies:
+          - colorama
+          - pipreqs
+          - pip-api
+
+#  - repo: local
+#    hooks:
+#      - id: citation.cff
+#        name: CITATION.CFF checker
+#        always_run: true
+#        pass_filenames: false
+#        language: system
+#        files: "^CITATION.cff$"
+#        entry: python dev-scripts/cff-ver-validate.py CITATION.cff

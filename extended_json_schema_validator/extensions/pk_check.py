@@ -1,40 +1,63 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from jsonschema.exceptions import FormatError, ValidationError
+import copy
+import urllib.error
+from typing import TYPE_CHECKING, cast
+from urllib.parse import urljoin, urlparse
+from urllib.request import Request, urlopen
 
-from .unique_check import UniqueKey, UniqueDef, UniqueLoc, ALLOWED_KEY_TYPES, ALLOWED_ATOMIC_VALUE_TYPES
+from jsonschema.exceptions import ValidationError
 
 from .abstract_check import CheckContext
+from .unique_check import (
+	ALLOWED_ATOMIC_VALUE_TYPES,
+	UniqueDef,
+	UniqueKey,
+	UniqueLoc,
+)
 
-import sys
-import re
-import json
+if TYPE_CHECKING:
+	from typing import (
+		Any,
+		Iterator,
+		Mapping,
+		MutableMapping,
+		Optional,
+		Sequence,
+		Tuple,
+		Union,
+	)
 
-from urllib.request import Request, urlopen
-from urllib.parse import urlparse, urljoin
-import urllib.error
+	import jsonschema as JSV
+	from typing_extensions import Final, TypedDict
 
-import codecs
+	from .abstract_check import FeatureValidatorConfig
+	
+	class PKConfigDict(TypedDict, total=False):
+		schema_prefix: str
+		accept: str
+		provider: Union[str, Sequence[str]]
+		
 
 class PrimaryKey(UniqueKey):
-	KeyAttributeName = 'primary_key'
-	SchemaErrorReason = 'dup_pk'
+	KeyAttributeNamePK: "Final[str]" = 'primary_key'
+	SchemaErrorReasonPK: "Final[str]" = 'dup_pk'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self,schemaURI, jsonSchemaSource='(unknown)', config={}, isRW=True):
+	def __init__(self,schemaURI: str, jsonSchemaSource: str = '(unknown)', config: "FeatureValidatorConfig" = {}, isRW: bool = True):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
 		self.doPopulate = False
-		self.gotIdsSet = None
+		self.gotIdsSet: "Optional[MutableMapping[str, Sequence[str]]]" = None
 		self.warmedUp = False
-		self.PopulatedPKWorld = dict()
+		self.PopulatedPKWorld: "MutableMapping[int, Any]" = dict()
 	
 	@property
-	def triggerAttribute(self):
-		return self.KeyAttributeName
+	def triggerAttribute(self) -> str:
+		return self.KeyAttributeNamePK
 	
 	@property
-	def triggerJSONSchemaDef(self):
+	def triggerJSONSchemaDef(self) -> "Mapping[str, Any]":
 		return {
 			self.triggerAttribute : {
 				"oneOf": [
@@ -55,19 +78,19 @@ class PrimaryKey(UniqueKey):
 		}
 	
 	@property
-	def _errorReason(self):
-		return self.SchemaErrorReason
+	def _errorReason(self) -> str:
+		return self.SchemaErrorReasonPK
 	
 	###
 	# Bootstrapping is done by unique_check implementation
 	# which is inherited
 	###
 	
-	def warmUpCaches(self):
+	def warmUpCaches(self) -> None:
 		if not self.warmedUp:
 			self.warmedUp = True
 			
-			setup = self.config.get(self.KeyAttributeName)
+			setup = cast("Optional[PKConfigDict]", self.config.get(self.triggerAttribute))
 			if setup is not None:
 				prefix = setup.get('schema_prefix')
 				accept = setup.get('accept')
@@ -75,9 +98,11 @@ class PrimaryKey(UniqueKey):
 					self.gotIdsSet = {}
 					
 					# The list of sources
-					url_base_list = setup.get('provider',[])
-					if not isinstance(url_base_list,(list,tuple)):
-						url_base_list = [ url_base_list ]
+					url_base_list_raw = setup.get('provider',[])
+					if isinstance(url_base_list_raw, (list,tuple)):
+						url_base_list = url_base_list_raw
+					else:
+						url_base_list = [ url_base_list_raw ]
 					
 					for url_base in url_base_list:
 						# Fetch the ids, based on the id
@@ -99,14 +124,14 @@ class PrimaryKey(UniqueKey):
 						except:
 							self.logger.exception("ERROR: Unable to parse remote keys data from "+compURL)
 	
-	def doDefaultPopulation(self, unique_id=-1, unique_state=[]):
+	def doDefaultPopulation(self, unique_id: int = -1, unique_state: "Union[bool, Sequence[str]]" = []) -> None:
 		if self.doPopulate:
 			# Deactivate future populations
 			self.doPopulate = False
 			
 			if self.gotIdsSet:
 				# The common dictionary for this declaration where all the unique values are kept
-				allow_provider_duplicates = self.config.get(self.KeyAttributeName).get('allow_provider_duplicates', False)
+				allow_provider_duplicates = self.config.get(self.triggerAttribute, {}).get('allow_provider_duplicates', False)
 				if allow_provider_duplicates:
 					UniqueWorld = self.PopulatedPKWorld
 				else:
@@ -124,7 +149,7 @@ class PrimaryKey(UniqueKey):
 							uniqueSet[theValue] = compURL
 		
 	
-	def validate(self,validator,unique_state,value,schema):
+	def validate(self, validator: "JSV.validators._Validator", unique_state: "Any", value: "Any", schema: "Any") -> "Iterator[ValidationError]":
 		self.warmUpCaches()
 		
 		# Populating before the validation itself
@@ -132,17 +157,18 @@ class PrimaryKey(UniqueKey):
 			# Needed to populate the cache of ids
 			# and the unicity check
 			unique_id = id(schema)
-			self.doDefaultPopulation(unique_id=unique_id, unique_state=unique_state)
+			self.doDefaultPopulation(unique_id=unique_id, unique_state=cast("Union[bool, Sequence[str]]", unique_state))
 			
 			if isinstance(unique_state,list):
 				obtainedValues = self.GetKeyValues(value,unique_state)
 			else:
-				obtainedValues = [(value,)]
+				obtainedValues = ([value],)
 			
 			isAtomicValue = len(obtainedValues) == 1 and len(obtainedValues[0]) == 1 and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
 			
+			theValues: "Tuple[Union[str, int, float, bool, None], ...]"
 			if isAtomicValue:
-				theValues = [ obtainedValues[0][0] ]
+				theValues = ( obtainedValues[0][0], )
 			else:
 				theValues = self.GenKeyStrings(obtainedValues)
 			
@@ -157,13 +183,13 @@ class PrimaryKey(UniqueKey):
 				else:
 					uniqueSet[theValue] = self.currentJSONFile
 	
-	def getContext(self):
+	def getContext(self) -> "Optional[CheckContext]":
 		# These are needed to assure the context is always completely populated
 		self.warmUpCaches()
 		self.doDefaultPopulation()
 		
 		if len(self.PopulatedPKWorld) > 0:
-			ConsolidatedUniqueWorld = self.PopulatedPKWorld.copy()
+			ConsolidatedUniqueWorld = copy.copy(self.PopulatedPKWorld)
 			
 			for unique_id, uniqueDef in self.UniqueWorld.items():
 				baseUniqueDef = ConsolidatedUniqueWorld.get(unique_id)
@@ -183,12 +209,12 @@ class PrimaryKey(UniqueKey):
 		
 		return CheckContext(schemaURI = self.schemaURI, context = ConsolidatedUniqueWorld)
 	
-	def invalidateCaches(self):
+	def invalidateCaches(self) -> None:
 		self.warmedUp = False
 		self.doPopulate = False
 		self.gotIdsSet = None
 	
-	def cleanup(self):
+	def cleanup(self) -> None:
 		super().cleanup()
 		if self.warmedUp:
 			self.doPopulate = True

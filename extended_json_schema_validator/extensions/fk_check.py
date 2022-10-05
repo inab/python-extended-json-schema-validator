@@ -1,54 +1,74 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from typing import List, NamedTuple, Union
+from typing import TYPE_CHECKING, NamedTuple, cast
+
+import uritools  # type: ignore[import]
 
 from .abstract_check import AbstractCustomFeatureValidator
-from .unique_check import ALLOWED_KEY_TYPES, ALLOWED_ATOMIC_VALUE_TYPES
-
 # We need this for its class methods
 from .pk_check import PrimaryKey
+from .unique_check import ALLOWED_ATOMIC_VALUE_TYPES
 
-from jsonschema.exceptions import FormatError, ValidationError
+if TYPE_CHECKING:
+	from typing import (
+		Any,
+		Iterator,
+		Mapping,
+		MutableMapping,
+		MutableSequence,
+		MutableSet,
+		Optional,
+		Sequence,
+		Set,
+		Tuple,
+		Union,
+	)
 
-import sys
-import re
-import json
+	import jsonschema as JSV
+	from jsonschema.exceptions import ValidationError
+	from typing_extensions import Final
 
-import uritools
+	from .abstract_check import (
+		BootstrapErrorDict,
+		CheckContext,
+		FeatureValidatorConfig,
+		RefSchemaTuple,
+		SecondPassErrorDict,
+	)
 
 class FKVal(NamedTuple):
-	value: Union[str, int, float, bool]
+	value: "Union[str, int, float, bool]"
 	where: str	# the JSON file where it happens
 
 class FKLoc(NamedTuple):
 	schemaURI: str
 	refSchemaURI: str
 	path: str
-	values: List[FKVal]
+	values: "MutableSequence[FKVal]"
 
 class FKDef(NamedTuple):
 	fkLoc: FKLoc
-	members: List[str]
+	members: "Sequence[str]"
 
 class ForeignKey(AbstractCustomFeatureValidator):
-	KeyAttributeName = 'foreign_keys'
-	SchemaErrorReason = 'stale_fk'
-	DanglingFKErrorReason = 'dangling_fk'
+	KeyAttributeNameFK: "Final[str]" = 'foreign_keys'
+	SchemaErrorReasonFK: "Final[str]" = 'stale_fk'
+	DanglingFKErrorReason: "Final[str]" = 'dangling_fk'
 	
 	# Each instance represents the set of keys from one ore more JSON Schemas
-	def __init__(self,schemaURI, jsonSchemaSource='(unknown)', config={}, isRW=True):
+	def __init__(self, schemaURI: str, jsonSchemaSource: str ='(unknown)', config: "FeatureValidatorConfig" = {}, isRW: bool = True):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
-		self.FKWorld = dict()
+		self.FKWorld: "MutableMapping[str, MutableMapping[str, FKDef]]" = dict()
 	
 	@property
-	def triggerAttribute(self):
-		return self.KeyAttributeName
+	def triggerAttribute(self) -> str:
+		return self.KeyAttributeNameFK
 	
 	@property
-	def triggerJSONSchemaDef(self):
+	def triggerJSONSchemaDef(self) -> "Mapping[str, Any]":
 		return {
-			self.KeyAttributeName : {
+			self.KeyAttributeNameFK : {
 				"type": "array",
 				"items": {
 					"type": "object",
@@ -76,22 +96,22 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		}
 	
 	@property
-	def _errorReason(self):
-		return self.SchemaErrorReason
+	def _errorReason(self) -> str:
+		return self.SchemaErrorReasonFK
 	
 	@property
-	def needsBootstrapping(self):
+	def needsBootstrapping(self) -> bool:
 		return True
 	
 	@property
-	def needsSecondPass(self):
+	def needsSecondPass(self) -> bool:
 		return True
 	
-	def bootstrap(self, refSchemaTuple = tuple()):
+	def bootstrap(self, refSchemaTuple: "RefSchemaTuple" = ({},{},{})) -> "Sequence[BootstrapErrorDict]":
 		(id2ElemId , keyRefs , refSchemaCache) = refSchemaTuple
 		
 		keyList = keyRefs[self.triggerAttribute]
-		errors = []
+		errors: "MutableSequence[BootstrapErrorDict]" = []
 		# Saving the unique locations
 		# based on information from FeatureLoc elems
 		for loc in keyList:
@@ -124,7 +144,11 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		return errors
 	
 	# This step is only going to gather all the foreign keys
-	def validate(self,validator,fk_defs,value,schema):
+	def validate(self, validator: "JSV.validators._Validator", fk_defs: "Any", value: "Any", schema: "Any") ->  "Iterator[ValidationError]":
+		# Next is needed to avoid mypy complaining about
+		# missing return or yield
+		if False:
+			yield
 		if fk_defs and isinstance(fk_defs,(list,tuple)):
 			fk_defs_gid = str(id(schema))
 			for fk_loc_i, p_FK_decl in enumerate(fk_defs):
@@ -139,12 +163,13 @@ class ForeignKey(AbstractCustomFeatureValidator):
 				if isinstance(fk_members,list):
 					obtainedValues = PrimaryKey.GetKeyValues(value,fk_members)
 				else:
-					obtainedValues = [(value,)]
+					obtainedValues = ([value],)
 				
 				isAtomicValue = len(obtainedValues) == 1 and len(obtainedValues[0]) == 1 and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
 				
+				theValues: "Tuple[Union[str, int, float, bool], ...]"
 				if isAtomicValue:
-					theValues = [ obtainedValues[0][0] ]
+					theValues = (obtainedValues[0][0], )
 				else:
 					theValues = PrimaryKey.GenKeyStrings(obtainedValues)
 				
@@ -164,10 +189,10 @@ class ForeignKey(AbstractCustomFeatureValidator):
 					fkVals.append(FKVal(where=self.currentJSONFile,value=theValue))
 	
 	# Now, time to check
-	def doSecondPass(self,l_customFeatureValidatorsContext):
-		errors = []
+	def doSecondPass(self, l_customFeatureValidatorsContext: "Mapping[str, Sequence[CheckContext]]") -> "Tuple[Set[str], Set[str], Sequence[SecondPassErrorDict]]":
+		errors: "MutableSequence[SecondPassErrorDict]" = []
 		
-		pkContextsHash = {}
+		pkContextsHash: "MutableMapping[str, MutableSequence[MutableMapping[str, str]]]" = {}
 		for className, pkContexts in l_customFeatureValidatorsContext.items():
 			# This instance is only interested in primary keys
 			if className == PrimaryKey.__name__:
@@ -183,8 +208,8 @@ class ForeignKey(AbstractCustomFeatureValidator):
 							pkVals.append(pkDef.values)
 		
 		# Now, at last, check!!!!!!!
-		uniqueWhere = set()
-		uniqueFailedWhere = set()
+		uniqueWhere: "MutableSet[str]" = set()
+		uniqueFailedWhere: "MutableSet[str]" = set()
 		for refSchemaURI,fkDefH in self.FKWorld.items():
 			for fk_loc_id,fkDef in fkDefH.items():
 				fkLoc = fkDef.fkLoc
@@ -220,9 +245,9 @@ class ForeignKey(AbstractCustomFeatureValidator):
 							'path': fkPath
 						})
 		
-		return uniqueWhere,uniqueFailedWhere,errors
+		return cast("Set[str]", uniqueWhere), cast("Set[str]", uniqueFailedWhere), errors
 	
-	def cleanup(self):
+	def cleanup(self) -> None:
 		# In order to not destroying the bootstrapping work
 		# only remove the recorded values
 		for fkDefH in self.FKWorld.values():

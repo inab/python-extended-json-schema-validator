@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import setuptools
-import re
 import os
+import re
 import sys
+
+import setuptools
 
 # In this way, we are sure we are getting
 # the installer's version of the library
@@ -12,7 +13,8 @@ import sys
 setupBaseDir = os.path.dirname(__file__)
 sys.path.insert(0, setupBaseDir)
 
-from extended_json_schema_validator import version as extended_validator_version
+from extended_json_schema_validator import \
+	version as extended_validator_version
 
 # Populating the long description
 with open(os.path.join(setupBaseDir, "README.md"), "r", encoding="utf-8") as fh:
@@ -45,10 +47,16 @@ setuptools.setup(
 	package_data={
 		'extended_json_schema_validator': [
 			'README-extensions.md',
-			'test-data'
+			'test-data',
+			"py.typed",
 		]
 	},
 	install_requires=requirements,
+	entry_points={
+		"console_scripts": [
+			"ext-json-validate=extended_json_validator.__main__:main",
+		],
+	},
 	classifiers=[
 		"Programming Language :: Python :: 3",
 		"License :: OSI Approved :: GNU Lesser General Public License v2 (LGPLv2)",

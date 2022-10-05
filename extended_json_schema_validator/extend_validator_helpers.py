@@ -1,13 +1,47 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import copy
+from typing import TYPE_CHECKING, cast
+
 import jsonschema as JSV
-import uritools
+import uritools  # type: ignore[import]
+
+if TYPE_CHECKING:
+	from typing import (
+		Any,
+		Callable,
+		Mapping,
+		MutableMapping,
+		MutableSequence,
+		MutableSet,
+		Optional,
+		Protocol,
+		Sequence,
+		Tuple,
+		Type,
+		Union,
+	)
+
+	from .extensions.abstract_check import (
+		AbstractCustomFeatureValidator,
+		FeatureLoc,
+		Id2ElemId,
+		JsonPointer2Val,
+		KeyRefs,
+		RefSchemaTuple,
+		ValidateCallable,
+	)
+	
+	CustomTypeCheckerCallable = Callable[[Callable[[Any], Any], Any], bool]
+	
+	RefSchemaListSet = MutableMapping[str, MutableSequence[RefSchemaTuple]]
+		
 
 # This method returns both the extended Validator instance and the dynamic validators
 # to be reset on command
 
-PLAIN_VALIDATOR_MAPPER = {
+PLAIN_VALIDATOR_MAPPER: "Mapping[str, Type[JSV.validators._Validator]]" = {
 	'http://json-schema.org/draft-04/schema#': JSV.validators.Draft4Validator,
 	'http://json-schema.org/draft-04/hyper-schema#': JSV.validators.Draft4Validator,
 	'http://json-schema.org/draft-06/schema#': JSV.validators.Draft6Validator,
@@ -17,32 +51,35 @@ PLAIN_VALIDATOR_MAPPER = {
 }
 
 
-def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidators,config={}, jsonSchemaSource='(unknown)', isRW=True):
+def extendValidator(schemaURI: str, validator: "Type[JSV.validators._Validator]", inputCustomTypes: "Mapping[str, CustomTypeCheckerCallable]", inputCustomValidators: "Mapping[Optional[str], Union[ValidateCallable, Sequence[Type[AbstractCustomFeatureValidator]]]]", config: "Mapping[str, Any]" = {}, jsonSchemaSource: str = '(unknown)', isRW: bool = True) -> "Tuple[Type[JSV.validators._Validator], Sequence[AbstractCustomFeatureValidator]]":
 	extendedValidators = validator.VALIDATORS.copy()
 	customValidatorsInstances = []
 	
 	# Validators which must be instantiated
+	instancedCustomValidators: "Mapping[str, ValidateCallable]"
 	if None in inputCustomValidators:
-		instancedCustomValidators = inputCustomValidators.copy()
+		_instancedCustomValidators = cast("MutableMapping[Optional[str], Union[ValidateCallable, Sequence[Type[AbstractCustomFeatureValidator]]]]", copy.copy(inputCustomValidators))
 		
 		# Removing the special entry
-		del instancedCustomValidators[None]
+		del _instancedCustomValidators[None]
 		
 		# Now, populating
-		for dynamicValidatorClass in inputCustomValidators[None]:
+		for dynamicValidatorClass in cast("Sequence[Type[AbstractCustomFeatureValidator]]", inputCustomValidators[None]):
+			
 			dynamicValidator = dynamicValidatorClass(schemaURI,jsonSchemaSource, config=config, isRW=isRW)
 			customValidatorsInstances.append(dynamicValidator)
 			
 			for triggerAttribute,triggeredValidation in dynamicValidator.getValidators():
-				if triggerAttribute in instancedCustomValidators:
+				if triggerAttribute in _instancedCustomValidators:
 					raise AssertionError("FATAL: Two custom validators are using the same triggering attribute: {}".format(triggerAttribute))
 				
 				# The method must exist, and accept the parameters
 				# declared on next documentation
 				# https://python-jsonschema.readthedocs.io/en/stable/creating/
-				instancedCustomValidators[triggerAttribute] = triggeredValidation
+				_instancedCustomValidators[triggerAttribute] = triggeredValidation
+		instancedCustomValidators = cast("Mapping[str, ValidateCallable]", _instancedCustomValidators)
 	else:
-		instancedCustomValidators = inputCustomValidators
+		instancedCustomValidators = cast("Mapping[str, ValidateCallable]", inputCustomValidators)
 	
 	extendedValidators.update(instancedCustomValidators)
 	
@@ -50,14 +87,11 @@ def extendValidator(schemaURI, validator, inputCustomTypes, inputCustomValidator
 	
 	return JSV.validators.extend(validator, validators=extendedValidators , type_checker=extendedChecker) , customValidatorsInstances
 	
-from collections import namedtuple
-
-FeatureLoc = namedtuple('FeatureLoc',['id','schemaURI','fragment','path','context'])
 
 REF_FEATURE='$ref'
 
 # It returns the set of values' ids 
-def traverseJSONSchema(jsonObj, schemaURI=None, keys=set(), fragment=None, refSchemaListSet={}):
+def traverseJSONSchema(jsonObj: "Any", schemaURI: "Optional[str]" = None, keys: "Union[MutableSet[str], Sequence[str]]" = set(), fragment: "Optional[str]" = None, refSchemaListSet: "RefSchemaListSet" = {}) -> "Optional[RefSchemaListSet]":
 	# Should we try getting it?
 	if schemaURI is None:
 		if isinstance(jsonObj,dict):
@@ -74,9 +108,11 @@ def traverseJSONSchema(jsonObj, schemaURI=None, keys=set(), fragment=None, refSc
 			# End / fail fast
 			return None
 	
+	assert schemaURI is not None
+	
 	# Dictionary from name of the feature
 	# to be captured to arrays of FeatureLoc named tuples
-	keyRefs = {}
+	keyRefs: "KeyRefs" = {}
 	
 	# Dictionary from Python address
 	# to dictionaries containing the features
@@ -85,11 +121,11 @@ def traverseJSONSchema(jsonObj, schemaURI=None, keys=set(), fragment=None, refSc
 	# First level: python address
 	# Second level: name of the feature
 	# Third level: unique ids
-	id2ElemId = {}
+	id2ElemId: "Id2ElemId" = {}
 	
 	# Dictionary from JSON Pointer
 	# to unique ids
-	jp2val = {}
+	jp2val: "JsonPointer2Val" = {}
 	
 	refSchemaListSet.setdefault(schemaURI,[]).append( (id2ElemId , keyRefs , jp2val) )
 	
@@ -99,7 +135,7 @@ def traverseJSONSchema(jsonObj, schemaURI=None, keys=set(), fragment=None, refSc
 	# And adding the '$ref' feature
 	keySet.add(REF_FEATURE)
 	
-	def _traverse_dict(schemaURI, j, jp="", fragment=None):
+	def _traverse_dict(schemaURI: str, j: "Mapping[str, Any]", jp: str = "", fragment: "Optional[str]" = None) -> None:
 		# Pre-processing
 		newPartialSchemaURI = j.get('$id')
 		if newPartialSchemaURI:
@@ -146,7 +182,7 @@ def traverseJSONSchema(jsonObj, schemaURI=None, keys=set(), fragment=None, refSc
 		else:
 			traverseJSONSchema(j,schemaURI=newSchemaURI,fragment=uriFragment,keys=keys,refSchemaListSet=refSchemaListSet)
 	
-	def _traverse_list(schemaURI, j, jp=""):
+	def _traverse_list(schemaURI: str, j: "Sequence[Any]", jp: str = "") -> None:
 		theIdStr = str(id(j))
 		for vi, v in enumerate(j):
 			str_vi = str(vi)
@@ -167,10 +203,10 @@ def traverseJSONSchema(jsonObj, schemaURI=None, keys=set(), fragment=None, refSc
 	
 	return refSchemaListSet
 
-def flattenTraverseListSet(traverseListSet):
+def flattenTraverseListSet(traverseListSet: "Sequence[RefSchemaTuple]") -> "RefSchemaTuple":
 	# Dictionary from name of the feature
 	# to be captured to arrays of FeatureLoc named tuples
-	keyRefs = {}
+	keyRefs: "KeyRefs" = {}
 	
 	# Dictionary from Python address
 	# to dictionaries containing the features
@@ -179,11 +215,11 @@ def flattenTraverseListSet(traverseListSet):
 	# First level: python address
 	# Second level: name of the feature
 	# Third level: unique ids
-	id2ElemId = {}
+	id2ElemId: "Id2ElemId" = {}
 	
 	# Dictionary from JSON Pointer
 	# to unique ids
-	jp2val = {}
+	jp2val: "JsonPointer2Val" = {}
 	
 	# First pass
 	for traverseSet in traverseListSet:

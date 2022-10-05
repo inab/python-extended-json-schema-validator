@@ -1,26 +1,90 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import sys
-import os
-import re
-import json
-import jsonschema as JSV
-import logging
-import uritools
+import abc
 import hashlib
+import json
+import logging
+import os
+from typing import TYPE_CHECKING, cast
 
-from typing import List, Any, Iterator
+import jsonschema as JSV
+import uritools  # type: ignore[import]
+import yaml
 
+from .extend_validator_helpers import (
+	PLAIN_VALIDATOR_MAPPER,
+	REF_FEATURE,
+	extendValidator,
+	flattenTraverseListSet,
+	traverseJSONSchema,
+)
+from .extensions.fk_check import ForeignKey
+from .extensions.pk_check import PrimaryKey
 # Augmenting the supported types
 from .extensions.unique_check import UniqueKey
-from .extensions.pk_check import PrimaryKey
-from .extensions.fk_check import ForeignKey
 
-from .extend_validator_helpers import extendValidator , traverseJSONSchema , flattenTraverseListSet, PLAIN_VALIDATOR_MAPPER , REF_FEATURE
+if TYPE_CHECKING:
+	from typing import (
+		Any,
+		ClassVar,
+		Iterator,
+		Mapping,
+		MutableMapping,
+		MutableSequence,
+		Optional,
+		Sequence,
+		Tuple,
+		Type,
+		Union,
+	)
+
+	from typing_extensions import Protocol, TypedDict, runtime_checkable
+
+	from .extend_validator_helpers import (
+		CustomTypeCheckerCallable,
+		RefSchemaListSet,
+	)
+	from .extensions.abstract_check import (
+		AbstractCustomFeatureValidator,
+		BootstrapErrorDict,
+		CheckContext,
+		Id2ElemId,
+		JsonPointer2Val,
+		KeyRefs,
+		RefSchemaTuple,
+		SecondPassErrorDict,
+	)
+	
+	ExtensibleValidatorConfig = Mapping[str, Any]
+	
+	@runtime_checkable
+	class CustomFormatProtocol(Protocol):
+		FormatName: str = "(unset)"
+		
+		@classmethod
+		@abc.abstractmethod
+		def IsCorrectFormat(cls, value: Any, schema: Optional[Any] = None) -> bool:
+			pass
+	
+	class SchemaHashEntry(TypedDict, total=False):
+		file: str
+		schema: Any
+		schema_hash: str
+		errors: MutableSequence[BootstrapErrorDict]
+		customFormatInstances: Sequence[AbstractCustomFeatureValidator]
+		validator: Type[JSV.validators._Validator]
+	
+	class ParsedContentEntry(TypedDict, total=False):
+		file: str
+		json: Any
+		schema_hash: str
+		schema_id: str
+		errors: MutableSequence[BootstrapErrorDict]
+
 
 class ExtensibleValidator(object):
-	CustomBaseValidators = {
+	CustomBaseValidators: "ClassVar[Mapping[Optional[str], Sequence[Type[AbstractCustomFeatureValidator]]]]" = {
 		None: [
 			UniqueKey,
 			PrimaryKey,
@@ -29,18 +93,18 @@ class ExtensibleValidator(object):
 	}
 	
 	SCHEMA_KEY = '$schema'
-	ALT_SCHEMA_KEYS = [
+	ALT_SCHEMA_KEYS: "Sequence[str]" = [
 		'@schema',
 		'_schema',
 		SCHEMA_KEY
 	]
 	
-	def __init__(self, customFormats=[], customTypes={}, customValidators=CustomBaseValidators, config={}, jsonRootTag=None, isRW = True):
+	def __init__(self, customFormats: "Sequence[CustomFormatProtocol]" = [], customTypes: "Mapping[str, CustomTypeCheckerCallable]" = {}, customValidators: "Mapping[Optional[str], Sequence[Type[AbstractCustomFeatureValidator]]]" = CustomBaseValidators, config: "ExtensibleValidatorConfig" = {}, jsonRootTag: "Optional[str]" = None, isRW: bool = True):
 		self.logger = logging.getLogger(self.__class__.__name__)
 		
-		self.schemaHash = {}
-		self.refSchemaCache = {}
-		self.refSchemaSet = {}
+		self.schemaHash: "MutableMapping[str, SchemaHashEntry]" = {}
+		self.refSchemaCache: "JsonPointer2Val" = {}
+		self.refSchemaSet: "MutableMapping[str, RefSchemaTuple]" = {}
 		self.customFormatCheckerInstance = JSV.FormatChecker()
 
 		# Registering the custom formats, in order to use them
@@ -54,7 +118,7 @@ class ExtensibleValidator(object):
 		self.isRW = isRW
 		self.doNotValidateNoId = not bool(config.get('validate-no-id',True))
 	
-	def loadJSONSchemas(self, *args, verbose=None):
+	def loadJSONSchemas(self, *args: "Union[str, SchemaHashEntry]", verbose: Optional[bool] = None) -> int:
 		p_schemaHash = self.schemaHash
 		# Schema validation stats
 		numDirOK = 0
@@ -72,14 +136,14 @@ class ExtensibleValidator(object):
 		jsonSchemaPossibles = list(args)
 		jsonSchemaNext = []
 		refSchemaCache = self.refSchemaCache = {}
-		refSchemaFile = {}
+		refSchemaFile: "MutableMapping[str, str]" = {}
 		refSchemaSet = self.refSchemaSet = {}
 		inlineCounter = 0
 		for jsonSchemaPossible in jsonSchemaPossibles:
-			schemaObj = None
+			# schemaObj = None
 			
 			if isinstance(jsonSchemaPossible,dict):
-				schemaObj = jsonSchemaPossible
+				schemaObj = cast("SchemaHashEntry", jsonSchemaPossible)
 				errors = schemaObj.get('errors')
 				if errors is None:
 					self.logger.log(logLevel, "\tIGNORE: cached schema does not have the mandatory 'errors' attribute, so it cannot be processed")
@@ -123,10 +187,19 @@ class ExtensibleValidator(object):
 				jsonSchemaFile = jsonSchemaPossible
 				self.logger.log(logLevel, "* Loading schema {0}".format(jsonSchemaFile))
 				try:
-					with open(jsonSchemaFile,mode="r",encoding="utf-8") as sHandle:
-						jsonSchema = json.load(sHandle)
+					try:
+						with open(jsonSchemaFile,mode="r",encoding="utf-8") as sHandle:
+							jsonSchema = json.load(sHandle)
+					except json.decoder.JSONDecodeError as jde:
+						with open(jsonSchemaFile,mode="r",encoding="utf-8") as sHandle:
+							try:
+								jsonSchema = yaml.safe_load(sHandle)
+							except yaml.error.MarkedYAMLError as mye:
+								self.logger.critical("\t- ERROR: Unable to parse schema file {0} neither as JSON or YAML. Reasons: {1} {2}".format(jsonSchemaFile, str(jde), str(mye)))
+								numFileFail += 1
+								continue
 				except IOError as ioe:
-					self.logger.critical("FATAL ERROR: Unable to open schema file {0}. Reason: {1}".format(jsonSchemaFile,ioe.strerror))
+					self.logger.critical("FATAL ERROR: Unable to open/read schema file {0}. Reason: {1}".format(jsonSchemaFile,ioe.strerror))
 					numFileFail += 1
 					continue
 				else:
@@ -190,7 +263,7 @@ class ExtensibleValidator(object):
 		
 		self.logger.log(logLevel, "PASS 0.b: JSON schema validation")
 		
-		refSchemaListSet = {}
+		refSchemaListSet: "RefSchemaListSet" = {}
 		for schemaObj in jsonSchemaNext:
 			jsonSchema = schemaObj['schema']
 			jsonSchemaFile = schemaObj['file']
@@ -199,6 +272,7 @@ class ExtensibleValidator(object):
 			# Errors related to these are captured in the previous loop
 			schemaValId = jsonSchema.get(self.SCHEMA_KEY)
 			plain_validator = PLAIN_VALIDATOR_MAPPER.get(schemaValId)
+			assert plain_validator is not None
 			
 			# Getting the JSON Schema URI, needed by this
 			idKey = '$id'  if '$id' in jsonSchema else 'id'
@@ -304,12 +378,12 @@ class ExtensibleValidator(object):
 			# referenced schemas id2ElemId and keyRefs
 			if REF_FEATURE in keyRefs:
 				# Unlinking references on keyRefs
-				keyRefs_augmented = {}
+				keyRefs_augmented: "KeyRefs" = {}
 				for featName , featList in keyRefs.items():
 					keyRefs_augmented[featName] = list(featList)
 				
 				# Unlinking references on id2ElemId
-				id2ElemId_augmented = {}
+				id2ElemId_augmented: "Id2ElemId" = {}
 				for i2e_k , featDict in  id2ElemId.items():
 					id2ElemId_augmented[i2e_k] = {}
 					for featName , l_uniqId in featDict.items():
@@ -384,12 +458,12 @@ class ExtensibleValidator(object):
 						if doBootstrap:
 							# Bootstrapping the schema
 							# By default this is a no-op
-							errors = cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs , self.refSchemaCache))
-							if errors:
-								for error in errors:
+							b_errors = cFI.bootstrap(refSchemaTuple=(id2ElemId , keyRefs , self.refSchemaCache))
+							if b_errors:
+								for error in b_errors:
 									self.logger.error("\t- ERROR: {}".format(error['description']))
 								
-								p_schema['errors'].extend(errors)
+								p_schema['errors'].extend(b_errors)
 								isValid = False
 			
 			if isValid:
@@ -402,12 +476,12 @@ class ExtensibleValidator(object):
 		
 		return len(self.schemaHash.keys())
 		
-	def getValidSchemas(self):
+	def getValidSchemas(self) -> "Mapping[str, SchemaHashEntry]":
 		return self.schemaHash
 	
 	# This method invalidates the different cached elements as much
 	# as possible, 
-	def invalidateCaches(self):
+	def invalidateCaches(self) -> None:
 		p_schemasObj = self.getValidSchemas()
 		
 		for schemaObj in p_schemasObj.values():
@@ -417,24 +491,26 @@ class ExtensibleValidator(object):
 	
 	# This method warms up the different cached elements as much
 	# as possible, 
-	def warmUpCaches(self, dynValList=None, verbose=None):
+	def warmUpCaches(self, dynValList: "Optional[Sequence[AbstractCustomFeatureValidator]]" = None, verbose: Optional[bool] = None) ->  None:
 		if not dynValList:
-			dynValList = []
+			newDynValList: "MutableSequence[AbstractCustomFeatureValidator]" = []
 			p_schemasObj = self.getValidSchemas()
 			
 			for schemaObj in p_schemasObj.values():
-				dynValList.extend(schemaObj['customFormatInstances'])
+				newDynValList.extend(schemaObj['customFormatInstances'])
+			
+			dynValList = newDynValList
 			
 		for dynVal in dynValList:
 			dynVal.warmUpCaches()
 	
-	def doSecondPass(self, dynValList, verbose=None):
+	def doSecondPass(self, dynValList: "Sequence[AbstractCustomFeatureValidator]", verbose: Optional[bool] = None) -> "Tuple[int, int, Mapping[str, Sequence[SecondPassErrorDict]]]":
 		secondPassOK = 0
 		secondPassFails = 0
-		secondPassErrors = {}
+		secondPassErrors: "MutableMapping[str, MutableSequence[SecondPassErrorDict]]" = {}
 		
 		# First, gather the list of contexts
-		gatheredContexts = {}
+		gatheredContexts: "MutableMapping[str, MutableSequence[CheckContext]]" = {}
 		for dynVal in dynValList:
 			dynContext = dynVal.getContext()
 			if dynContext is not None:
@@ -456,18 +532,18 @@ class ExtensibleValidator(object):
 		
 		return secondPassOK, secondPassFails, secondPassErrors
 	
-	def _resetDynamicValidators(self, dynValList, verbose=None):
+	def _resetDynamicValidators(self, dynValList: "Sequence[AbstractCustomFeatureValidator]", verbose: Optional[bool] = None) -> None:
 		for dynVal in dynValList:
 			dynVal.cleanup()
 	
 	@classmethod
-	def GetNormalizedJSONHash(cls,json_data):
+	def GetNormalizedJSONHash(cls, json_data: "Any") -> "str":
 		# First, we serialize it in a reproducible way
 		json_canon = json.dumps(json_data,sort_keys=True,indent=None,separators=(',',':'))
 		
 		return hashlib.sha1(json_canon.encode('utf-8')).hexdigest()
 	
-	def jsonValidateIter(self, *args, verbose=None) -> Iterator[Any]:
+	def jsonValidateIter(self, *args: "Union[str, ParsedContentEntry]", verbose: Optional[bool] = None) -> "Iterator[Any]":
 		"""
 		This method validates a given list of JSON contents.
 		These contents can be either already in memory, or
@@ -490,9 +566,6 @@ class ExtensibleValidator(object):
 		else:
 			logLevel = logging.DEBUG
 		
-		# A two level hash, in order to check primary key restrictions
-		PKvals = dict()
-		
 		# JSON validation stats
 		numDirOK = 0
 		numDirFail = 0
@@ -502,9 +575,8 @@ class ExtensibleValidator(object):
 		numFilePass2OK = 0
 		numFilePass2Fail = 0
 		
-		report = []
 		dynSchemaSet = set()
-		dynSchemaValList = []
+		dynSchemaValList: "MutableSequence[AbstractCustomFeatureValidator]" = []
 		
 		# This step is needed for cases where external sources can populate
 		# the structures used to validate, like the list of primary keys
@@ -520,20 +592,21 @@ class ExtensibleValidator(object):
 		# First pass, check against JSON schema, as well as primary keys unicity
 		self.logger.log(logLevel, "PASS 1: Schema validation and PK checks")
 		iJsonPossible = -1
-		jsonPossibles = list(args)
+		jsonPossibles: "MutableSequence[Optional[Union[str, ParsedContentEntry]]]" = list(args)
 		for jsonPossible in jsonPossibles:
 			iJsonPossible += 1
 			jsonObj = None
+			
+			assert jsonPossible is not None
 			if isinstance(jsonPossible,dict):
 				jsonObj = jsonPossible
 				errors = jsonObj.get('errors')
 				if errors is None:
 					self.logger.log(logLevel, "\tIGNORE: cached JSON does not have the mandatory 'errors' attribute, so it cannot be processed")
-					numFileIgnore += 1
+					numFilePass1Ignore += 1
 					
 					# For the report
-					jsonObj.setDefault('errors',[{'reason': 'ignored', 'description': 'Programming error: uninitialized error structures'}])
-					#report.append(jsonObj)
+					jsonObj.setdefault('errors',[{'reason': 'ignored', 'description': 'Programming error: uninitialized error structures'}])
 					yield jsonObj
 					
 					# Masking it for the pass 2 loop
@@ -547,10 +620,9 @@ class ExtensibleValidator(object):
 						'reason': 'ignored',
 						'description': "Programming error: the cached json is missing"
 					})
-					numFileIgnore += 1
+					numFilePass1Ignore += 1
 					
 					# For the report
-					#report.append(jsonObj)
 					yield jsonObj
 					
 					# Masking it for the pass 2 loop
@@ -574,7 +646,6 @@ class ExtensibleValidator(object):
 					numDirOK += 1
 				except IOError as ioe:
 					self.logger.critical("FATAL ERROR: Unable to open/process JSON directory {0}. Reason: {1}".format(jsonDir,ioe.strerror))
-					#report.append({'file': jsonDir,'errors': [{'reason': 'fatal', 'description': 'Unable to open/process JSON directory'}]})
 					yield {'file': jsonDir,'errors': [{'reason': 'fatal', 'description': 'Unable to open/process JSON directory'}]}
 					numDirFail += 1
 				finally:
@@ -585,15 +656,27 @@ class ExtensibleValidator(object):
 			else:
 				jsonFile = jsonPossible
 				try:
-					with open(jsonFile,mode="r",encoding="utf-8") as jHandle:
-						self.logger.log(logLevel, "* Validating {0}".format(jsonFile))
-						jsonDoc = json.load(jHandle)
+					self.logger.log(logLevel, "* Validating {0}".format(jsonFile))
+					try:
+						with open(jsonFile,mode="r",encoding="utf-8") as jHandle:
+							jsonDoc = json.load(jHandle)
+					except json.decoder.JSONDecodeError as jde:
+						try:
+							with open(jsonFile,mode="r",encoding="utf-8") as jHandle:
+								jsonDoc = yaml.safe_load(jHandle)
+						except yaml.error.MarkedYAMLError as mye:
+							self.logger.error("\t- ERROR: Unable to parse file {0} neither as JSON or YAML. Reasons: {1} {2}".format(jsonFile, str(jde), str(mye)))
+							# Masking it for the next loop
+							yield {'file': jsonFile,'errors': [{'reason': 'fatal', 'description': 'Unable to parse file'}]}
+							jsonPossibles[iJsonPossible] = None
+							numFilePass1Fail += 1
+							continue
+								
 						
 				except IOError as ioe:
-					self.logger.error("\t- ERROR: Unable to open file {0}. Reason: {1}".format(jsonFile,ioe.strerror))
+					self.logger.error("\t- ERROR: Unable to open/read file {0}. Reason: {1}".format(jsonFile,ioe.strerror))
 					# Masking it for the next loop
-					# report.append({'file': jsonFile,'errors': [{'reason': 'fatal', 'description': 'Unable to open/parse JSON file'}]})
-					yield {'file': jsonFile,'errors': [{'reason': 'fatal', 'description': 'Unable to open/parse JSON file'}]}
+					yield {'file': jsonFile,'errors': [{'reason': 'fatal', 'description': 'Unable to open/read file'}]}
 					jsonPossibles[iJsonPossible] = None
 					numFilePass1Fail += 1
 					continue
@@ -614,25 +697,25 @@ class ExtensibleValidator(object):
 			else:
 				jsonRoot = jsonDoc
 			
-			jsonSchemaId = None
+			jsonSchemaIdVal: "Optional[str]" = None
 			for altSchemaKey in self.ALT_SCHEMA_KEYS:
 				if altSchemaKey in jsonRoot:
-					jsonSchemaId = jsonRoot[altSchemaKey]
+					jsonSchemaIdVal = jsonRoot[altSchemaKey]
 					break
 			
-			if jsonSchemaId is not None:
-				if jsonSchemaId in p_schemaHash:
-					self.logger.log(logLevel, "\t- Using {0} schema".format(jsonSchemaId))
+			if jsonSchemaIdVal is not None:
+				if jsonSchemaIdVal in p_schemaHash:
+					self.logger.log(logLevel, "\t- Using {0} schema".format(jsonSchemaIdVal))
 					
-					schemaObj = p_schemaHash[jsonSchemaId]
+					schemaObj = p_schemaHash[jsonSchemaIdVal]
 					
 					for customFormatInstance in schemaObj['customFormatInstances']:
 						customFormatInstance.setCurrentJSONFilename(jsonFile)
 					
 					# Registering the dynamic validators to be cleaned up
 					# when the validator finishes the session
-					if jsonSchemaId not in dynSchemaSet:
-						dynSchemaSet.add(jsonSchemaId)
+					if jsonSchemaIdVal not in dynSchemaSet:
+						dynSchemaSet.add(jsonSchemaIdVal)
 						localDynSchemaVal = schemaObj['customFormatInstances']
 						if localDynSchemaVal:
 							# We reset them, in case they were dirty
@@ -642,9 +725,9 @@ class ExtensibleValidator(object):
 					jsonSchema = schemaObj['schema']
 					validator = schemaObj['validator']
 					jsonObj['schema_hash'] = schemaObj['schema_hash']
-					jsonObj['schema_id'] = jsonSchemaId
+					jsonObj['schema_id'] = jsonSchemaIdVal
 					
-					cachedSchemasResolver = JSV.RefResolver(base_uri=jsonSchemaId, referrer=jsonSchema, store=self.refSchemaCache)
+					cachedSchemasResolver = JSV.RefResolver(base_uri=jsonSchemaIdVal, referrer=jsonSchema, store=self.refSchemaCache)
 					
 					valErrors = [ error  for error in validator(jsonSchema, format_checker = self.customFormatCheckerInstance,resolver = cachedSchemasResolver).iter_errors(jsonDoc) ]
 					
@@ -664,7 +747,6 @@ class ExtensibleValidator(object):
 							})
 						
 						# Masking it for the next loop
-						# report.append(jsonPossibles[iJsonPossible])
 						yield jsonPossibles[iJsonPossible]
 						jsonPossibles[iJsonPossible] = None
 						numFilePass1Fail += 1
@@ -675,13 +757,12 @@ class ExtensibleValidator(object):
 						numFilePass1OK += 1
 					
 				else:
-					self.logger.log(logLevel, "\t- Skipping schema validation (schema with URI {0} not found)".format(jsonSchemaId))
+					self.logger.log(logLevel, "\t- Skipping schema validation (schema with URI {0} not found)".format(jsonSchemaIdVal))
 					errors.append({
 						'reason': 'schema_unknown',
-						'description': "Schema with URI {0} was not loaded".format(jsonSchemaId)
+						'description': "Schema with URI {0} was not loaded".format(jsonSchemaIdVal)
 					})
 					# Masking it for the next loop
-					# report.append(jsonPossibles[iJsonPossible])
 					yield jsonPossibles[iJsonPossible]
 					jsonPossibles[iJsonPossible] = None
 					numFilePass1Ignore += 1
@@ -692,7 +773,6 @@ class ExtensibleValidator(object):
 					'description': "No hint to identify the correct JSON Schema to be used to validate"
 				})
 				# Masking it for the next loop
-				# report.append(jsonPossibles[iJsonPossible])
 				yield jsonPossibles[iJsonPossible]
 				jsonPossibles[iJsonPossible] = None
 				numFilePass1Ignore += 1
@@ -713,30 +793,29 @@ class ExtensibleValidator(object):
 			
 			#use Data::Dumper;
 			#print Dumper(@jsonFiles),"\n";
-			for jsonObj in jsonPossibles:
-				if jsonObj is None:
+			for jsonObjPossible in cast("MutableSequence[Optional[ParsedContentEntry]]", jsonPossibles):
+				if jsonObjPossible is None:
 					continue
 				
 				# Adding this survivor to the report
-				# report.append(jsonObj)
-				jsonFile = jsonObj['file']
+				jsonFile = jsonObjPossible['file']
 				self.logger.log(logLevel, "* Additional checks on {0}".format(jsonFile))
 				
 				errorList = secondPassErrors.get(jsonFile)
 				if errorList:
-					jsonObj['errors'].extend(errorList)
+					jsonObjPossible['errors'].extend(errorList)
 					self.logger.error("\t- ERRORS:")
 					self.logger.error("\n".join(map(lambda e: "\t\tPath: {0} . Message: {1}".format(e['path'],e['description']), errorList)))
 				else:
 					self.logger.log(logLevel, "\t- Validated!")
 				
-				yield jsonObj
+				yield jsonObjPossible
 		else:
 			self.logger.log(logLevel, "PASS 2: (skipped)")
 		
 		self.logger.log(logLevel, "VALIDATION STATS:\n\t- directories ({0} OK, {1} failed)\n\t- File PASS 1 ({2} OK, {3} ignored, {4} error)\n\t- File PASS 2 ({5} OK, {6} error)".format(numDirOK,numDirFail,numFilePass1OK,numFilePass1Ignore,numFilePass1Fail,numFilePass2OK,numFilePass2Fail))
 
-	def jsonValidate(self,*args, verbose=None) -> List[Any]:
+	def jsonValidate(self, *args: "Union[str, ParsedContentEntry]", verbose: Optional[bool] = None) -> "Sequence[Any]":
 		"""
 		This method validates a given list of JSON contents.
 		These contents can be either already in memory, or

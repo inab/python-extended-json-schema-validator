@@ -1,4 +1,9 @@
+wheel
+pylint >= 2.13.9
+pyflakes >= 2.5.0
+mypy >= 0.971
+pre-commit >= 2.17.0
+isort[colors,requirements_deprecated_finder] >= 5.10.1
 pydeps
-pylint
 build
 twine
