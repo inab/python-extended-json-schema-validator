@@ -1,6 +1,6 @@
-# With 'format' several optional formats
+# With 'format-nongpl' several optional formats
 # are supported through additional libraries
-jsonschema[format] >= 3.0.0
+jsonschema[format-nongpl] >= 3.0.0
 jsonpath_ng
 uritools
 pyyaml
