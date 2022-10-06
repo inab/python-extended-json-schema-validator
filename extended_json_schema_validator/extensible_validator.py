@@ -122,7 +122,7 @@ class ExtensibleValidator(object):
 		self.doNotValidateNoId = not bool(config.get("validate-no-id", True))
 
 	def loadJSONSchemas(
-		self, *args: "Union[str, SchemaHashEntry]", verbose: Optional[bool] = None
+		self, *args: "Union[str, SchemaHashEntry]", verbose: "Optional[bool]" = None
 	) -> int:
 		p_schemaHash = self.schemaHash
 		# Schema validation stats
@@ -626,7 +626,7 @@ class ExtensibleValidator(object):
 	def warmUpCaches(
 		self,
 		dynValList: "Optional[Sequence[AbstractCustomFeatureValidator]]" = None,
-		verbose: Optional[bool] = None,
+		verbose: "Optional[bool]" = None,
 	) -> None:
 		if not dynValList:
 			newDynValList: "MutableSequence[AbstractCustomFeatureValidator]" = []
@@ -643,7 +643,7 @@ class ExtensibleValidator(object):
 	def doSecondPass(
 		self,
 		dynValList: "Sequence[AbstractCustomFeatureValidator]",
-		verbose: Optional[bool] = None,
+		verbose: "Optional[bool]" = None,
 	) -> "Tuple[int, int, Mapping[str, Sequence[SecondPassErrorDict]]]":
 		secondPassOK = 0
 		secondPassFails = 0
@@ -679,7 +679,7 @@ class ExtensibleValidator(object):
 	def _resetDynamicValidators(
 		self,
 		dynValList: "Sequence[AbstractCustomFeatureValidator]",
-		verbose: Optional[bool] = None,
+		verbose: "Optional[bool]" = None,
 	) -> None:
 		for dynVal in dynValList:
 			dynVal.cleanup()
@@ -694,7 +694,7 @@ class ExtensibleValidator(object):
 		return hashlib.sha1(json_canon.encode("utf-8")).hexdigest()
 
 	def jsonValidateIter(
-		self, *args: "Union[str, ParsedContentEntry]", verbose: Optional[bool] = None
+		self, *args: "Union[str, ParsedContentEntry]", verbose: "Optional[bool]" = None
 	) -> "Iterator[Any]":
 		"""
 		This method validates a given list of JSON contents.
@@ -1087,7 +1087,7 @@ class ExtensibleValidator(object):
 		)
 
 	def jsonValidate(
-		self, *args: "Union[str, ParsedContentEntry]", verbose: Optional[bool] = None
+		self, *args: "Union[str, ParsedContentEntry]", verbose: "Optional[bool]" = None
 	) -> "Sequence[Any]":
 		"""
 		This method validates a given list of JSON contents.

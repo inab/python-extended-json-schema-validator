@@ -134,7 +134,7 @@ class AbstractCustomFeatureValidator(abc.ABC):
 		return cast("Optional[str]", getattr(cls, cls.CachePathProp))
 
 	@classmethod
-	def InvalidateCache(cls, cachePath: Optional[str] = None) -> None:
+	def InvalidateCache(cls, cachePath: "Optional[str]" = None) -> None:
 		if (cls.CacheProp is not None) and hasattr(cls, cls.CacheProp):
 			# Get the shared Cache instance
 			cache = getattr(cls, cls.CacheProp)
