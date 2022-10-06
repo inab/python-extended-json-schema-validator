@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 import os
-from typing import TYPE_CHECKING, cast
+from typing import NamedTuple, TYPE_CHECKING, cast
 
 import jsonschema as JSV
 import uritools  # type: ignore[import]
@@ -84,6 +84,17 @@ if TYPE_CHECKING:
 		errors: MutableSequence[BootstrapErrorDict]
 
 
+class LoadedSchemasStats(NamedTuple):
+	numFileOK: int
+	numDirOK: int
+	numFileIgnore: int
+	numFileFail: int
+	numDirFail: int
+	numSchemaConsistent: int
+	numSchemaInconsistent: int
+	loadedSchemas: "MutableMapping[str, SchemaHashEntry]"
+
+
 class ExtensibleValidator(object):
 	CustomBaseValidators: "ClassVar[Mapping[Optional[str], Sequence[Type[AbstractCustomFeatureValidator]]]]" = {
 		None: [UniqueKey, PrimaryKey, ForeignKey]
@@ -121,9 +132,9 @@ class ExtensibleValidator(object):
 		self.isRW = isRW
 		self.doNotValidateNoId = not bool(config.get("validate-no-id", True))
 
-	def loadJSONSchemas(
+	def loadJSONSchemasExt(
 		self, *args: "Union[str, SchemaHashEntry]", verbose: "Optional[bool]" = None
-	) -> int:
+	) -> LoadedSchemasStats:
 		p_schemaHash = self.schemaHash
 		# Schema validation stats
 		numDirOK = 0
@@ -606,7 +617,23 @@ class ExtensibleValidator(object):
 			),
 		)
 
-		return len(self.schemaHash.keys())
+		return LoadedSchemasStats(
+			numFileOK=numFileOK,
+			numDirOK=numDirOK,
+			numFileIgnore=numFileIgnore,
+			numFileFail=numFileFail,
+			numDirFail=numDirFail,
+			numSchemaConsistent=numSchemaConsistent,
+			numSchemaInconsistent=numSchemaInconsistent,
+			loadedSchemas=self.schemaHash,
+		)
+
+	def loadJSONSchemas(
+		self, *args: "Union[str, SchemaHashEntry]", verbose: "Optional[bool]" = None
+	) -> int:
+		l_stats = self.loadJSONSchemasExt(verbose=verbose, *args)
+
+		return len(l_stats.loadedSchemas.keys())
 
 	def getValidSchemas(self) -> "Mapping[str, SchemaHashEntry]":
 		return self.schemaHash

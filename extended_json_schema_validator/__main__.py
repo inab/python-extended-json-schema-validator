@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import copy
 import json
 import logging
 import os
@@ -14,6 +15,14 @@ import yaml
 
 from . import version as ejsv_version
 from .extensible_validator import ExtensibleValidator
+
+from typing import cast, TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from typing import (
+		Any,
+		MutableMapping,
+	)
 
 # This is needed to assure open suports encoding parameter
 if sys.version_info[0] == 2:
@@ -219,10 +228,53 @@ def main() -> None:
 	ev = ExtensibleValidator(config=local_config, isRW=args.isRWCache)
 
 	isVerbose = logLevel <= logging.INFO
-	numSchemas = ev.loadJSONSchemas(args.jsonSchemaDir, verbose=isVerbose)
+	loadedSchemasStats = ev.loadJSONSchemasExt(args.jsonSchemaDir, verbose=isVerbose)
 
-	if numSchemas > 0:
-		# Should we invalidate caches?
+	exitCode = 0
+	report = []
+	if args.reportFilename is not None:
+		if args.annotReport:
+			annotP = jsonpath_ng.ext.parse(args.annotReport)
+		else:
+			annotP = None
+
+		for loadedSchema in loadedSchemasStats.loadedSchemas.values():
+			rep: "MutableMapping[str, Any]" = copy.copy(
+				cast("MutableMapping[str, Any]", loadedSchema)
+			)
+
+			# Removing annoying instances
+			if "customFormatInstances" in rep:
+				del rep["customFormatInstances"]
+			if "validator" in rep:
+				del rep["validator"]
+
+			if len(rep["errors"]) > 0:
+				exitCode = 3
+			elif args.isErrorReport:
+				continue
+
+			if annotP is not None:
+				for match in annotP.find(rep["schema"]):
+					rep["annot"] = match.value
+					break
+			if args.isQuietReport:
+				del rep["schema"]
+
+			report.append(rep)
+	elif len(sys.argv) == 2:
+		if loadedSchemasStats.numFileFail > 0:
+			exitCode = 3
+
+	if len(sys.argv) > 2:
+		numSchemas = len(loadedSchemasStats.loadedSchemas.keys())
+		if numSchemas == 0:
+			logging.critical(
+				"FATAL ERROR: No schema was successfully loaded. Exiting...\n"
+			)
+			sys.exit(1)
+
+		# Should we invalidate caches before parsing?
 		if args.invalidate:
 			logging.info("\n* Invalidating caches.")
 			ev.invalidateCaches()
@@ -234,26 +286,18 @@ def main() -> None:
 			t1 = time.time()
 			logging.info("\t{} seconds".format(t1 - t0))
 
-	if len(sys.argv) > 2:
-		if numSchemas == 0:
-			logging.critical(
-				"FATAL ERROR: No schema was successfully loaded. Exiting...\n"
-			)
-			sys.exit(1)
-
+		# Now, time to parse
 		jsonFiles = tuple(args.json_files)
 		reportIter = ev.jsonValidateIter(*jsonFiles, verbose=isVerbose)
 
 		exitCode = 0
 		if args.reportFilename is not None:
-			logging.info("* Storing JSON report at {}".format(args.reportFilename))
 
 			if args.annotReport:
 				annotP = jsonpath_ng.ext.parse(args.annotReport)
 			else:
 				annotP = None
 
-			report = []
 			for rep in reportIter:
 				if len(rep["errors"]) > 0:
 					exitCode = 2
@@ -268,15 +312,18 @@ def main() -> None:
 					del rep["json"]
 
 				report.append(rep)
-			with open(args.reportFilename, mode="w", encoding="utf-8") as repH:
-				json.dump(report, repH, indent=4, sort_keys=True)
 		else:
 			for rep in reportIter:
 				if len(rep["errors"]) > 0:
 					exitCode = 2
 					break
 
-		sys.exit(exitCode)
+	if args.reportFilename is not None:
+		logging.info("* Storing validation report at {}".format(args.reportFilename))
+		with open(args.reportFilename, mode="w", encoding="utf-8") as repH:
+			json.dump(report, repH, indent=4, sort_keys=True)
+
+	sys.exit(exitCode)
 
 
 if __name__ == "__main__":
