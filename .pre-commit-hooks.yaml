@@ -1,4 +1,4 @@
--   id: jsonschemas
+-   id: jsonschema_dir_validate
     name: Extended JSON Schema validation
     description: 'The extended JSON Schema validator is both a command-line utility and a library for the validation of both JSON schemas and JSON files. Both the schemas and the contents can be in either JSON or YAML'
     entry: ext-json-validate

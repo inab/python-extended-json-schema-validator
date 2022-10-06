@@ -7,6 +7,10 @@ from typing import TYPE_CHECKING, cast
 import jsonschema as JSV
 import uritools  # type: ignore[import]
 
+from .extensions.abstract_check import (
+	FeatureLoc,
+)
+
 if TYPE_CHECKING:
 	from typing import (
 		Any,
@@ -25,7 +29,6 @@ if TYPE_CHECKING:
 
 	from .extensions.abstract_check import (
 		AbstractCustomFeatureValidator,
-		FeatureLoc,
 		Id2ElemId,
 		JsonPointer2Val,
 		KeyRefs,
