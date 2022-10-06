@@ -18,16 +18,12 @@ repos:
         require_serial: true
         entry: mypy --strict
 
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.10.1
+  - repo: https://github.com/jmfernandez/pre-commit_mirrors-tan
+    rev: v22.8.0
     hooks:
-      - id: isort
+      - id: tan
         exclude: "^[^/]*env/|dev-[^/]*/"
-        args: [--diff, --check, --color]
-        additional_dependencies:
-          - colorama
-          - pipreqs
-          - pip-api
+        args: [--diff, --check, --use-tabs]
 
 #  - repo: local
 #    hooks:

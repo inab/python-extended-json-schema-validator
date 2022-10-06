@@ -15,10 +15,11 @@ In order to install the dependencies you need `virtualenv` or `venv`, and `pip`.
   source .py3env/bin/activate
   ```
   
-Within the activated environment, the installation of the dependencies is done with next commands:
+Within the activated environment, the installation of the dependencies is done with next commands. As the constraints depend on the python version, you have to use the most appropriate one:
   ```bash
   pip install --upgrade pip wheel
-  pip install -r requirements.txt -c constraints.txt
+  # For instance, python 3.8
+  pip install -r requirements.txt -c constraints-3.8.txt
   ```
 
 ## Development tips
@@ -34,7 +35,7 @@ pip install -r mypy-requirements.txt
 One of these dependencies is [pre-commit](https://pre-commit.com/), whose rules are declared at [.pre-commit-config.yaml](.pre-commit-config.yaml) (there are special versions of these rules for GitHub).
 
 The rules run both [pylint](https://pypi.org/project/pylint/),
-[mypy](http://mypy-lang.org/) and [black](https://black.readthedocs.io/en/stable/), among others.
+[mypy](http://mypy-lang.org/) and [tan](https://pypi.org/project/tan/) (a fork of `black` which allows tabs through a flag), among others.
 
 The pre-commit development hook which runs these tools before any commit is installed just running:
 

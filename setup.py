@@ -13,20 +13,19 @@ import setuptools
 setupBaseDir = os.path.dirname(__file__)
 sys.path.insert(0, setupBaseDir)
 
-from extended_json_schema_validator import \
-	version as extended_validator_version
+from extended_json_schema_validator import version as extended_validator_version
 
 # Populating the long description
 with open(os.path.join(setupBaseDir, "README.md"), "r", encoding="utf-8") as fh:
 	long_description = fh.read()
 
 # Populating the install requirements
-with open(os.path.join(setupBaseDir, 'requirements.txt'), "r", encoding="utf-8") as f:
+with open(os.path.join(setupBaseDir, "requirements.txt"), "r", encoding="utf-8") as f:
 	requirements = []
 	egg = re.compile(r"#[^#]*egg=([^=&]+)")
 	for line in f.read().splitlines():
 		m = egg.search(line)
-		requirements.append(line  if m is None  else m.group(1))
+		requirements.append(line if m is None else m.group(1))
 
 
 setuptools.setup(
@@ -45,9 +44,9 @@ setuptools.setup(
 	},
 	packages=setuptools.find_packages(),
 	package_data={
-		'extended_json_schema_validator': [
-			'README-extensions.md',
-			'test-data',
+		"extended_json_schema_validator": [
+			"README-extensions.md",
+			"test-data",
 			"py.typed",
 		]
 	},
