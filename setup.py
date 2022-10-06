@@ -53,7 +53,7 @@ setuptools.setup(
 	install_requires=requirements,
 	entry_points={
 		"console_scripts": [
-			"ext-json-validate=extended_json_validator.__main__:main",
+			"ext-json-validate=extended_json_schema_validator.__main__:main",
 		],
 	},
 	classifiers=[
