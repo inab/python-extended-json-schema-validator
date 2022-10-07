@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 		JsonPointer2Val,
 		KeyRefs,
 		RefSchemaTuple,
+		SchemaHashEntry,
 		ValidateCallable,
 	)
 
@@ -375,7 +376,12 @@ def refResolver_resolve(
 	return url, refResolver._remote_cache(url)  # type: ignore[attr-defined]
 
 
-def export_resolved_references(refResolver: "JSV.RefResolver", schema: "Any") -> "Any":
+def export_resolved_references(
+	contextSchemaURI: "str",
+	schema: "Any",
+	schemaHash: "MutableMapping[str, SchemaHashEntry]",
+	resolved: "MutableSet[str]" = set(),
+) -> "Any":
 	"""
 	Resolves json references and merges them into a consolidated schema for validation purposes.
 	Inspired in https://github.com/python-jsonschema/jsonschema/pull/419
@@ -388,12 +394,36 @@ def export_resolved_references(refResolver: "JSV.RefResolver", schema: "Any") ->
 	if isinstance(schema, dict):
 		for key, value in schema.items():
 			if key == "$ref":
+				contextSchemaURI_E, fragment_E = uritools.uridefrag(contextSchemaURI)
+				schemaObj = schemaHash.get(contextSchemaURI_E)
+
+				if schemaObj is None:
+					raise Exception(f"Unable to resolve {contextSchemaURI}")
+
+				refResolver = schemaObj["ref_resolver"]
+
+				# One step resolution
 				ref_schema = refResolver_resolve(refResolver, value)
 				if ref_schema:
-					return ref_schema[1]
+					# return ref_schema[1]
+					if contextSchemaURI in resolved:
+						print(f"RECURSION DETECTED {contextSchemaURI} {ref_schema[1]}")
+						return ref_schema[1]
+
+					resolved = set(resolved)
+					resolved.add(contextSchemaURI)
+					return export_resolved_references(
+						ref_schema[0], ref_schema[1], schemaHash, resolved
+					)
+				else:
+					raise Exception(
+						f"Unable to finish resolution (related to {contextSchemaURI})"
+					)
 
 			# When key is not "$ref"
-			resolved_ref = export_resolved_references(refResolver, value)
+			resolved_ref = export_resolved_references(
+				contextSchemaURI, value, schemaHash, resolved
+			)
 			if resolved_ref and resolved_ref != value:
 				if pending_copy:
 					schema_out = copy.copy(schema)
@@ -402,7 +432,9 @@ def export_resolved_references(refResolver: "JSV.RefResolver", schema: "Any") ->
 				schema_out[key] = resolved_ref
 	elif isinstance(schema, list):
 		for (idx, value) in enumerate(schema):
-			resolved_ref = export_resolved_references(refResolver, value)
+			resolved_ref = export_resolved_references(
+				contextSchemaURI, value, schemaHash, resolved
+			)
 			if resolved_ref and resolved_ref != value:
 				if pending_copy:
 					schema_out = copy.copy(schema)

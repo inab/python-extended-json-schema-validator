@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 		Sequence,
 		Set,
 		Tuple,
+		Type,
 	)
 
 	import jsonschema as JSV
@@ -45,6 +46,16 @@ if TYPE_CHECKING:
 
 	class SecondPassErrorDict(BootstrapErrorDict):
 		file: str
+
+	class SchemaHashEntry(TypedDict, total=False):
+		file: str
+		schema: Any
+		schema_hash: str
+		errors: MutableSequence[BootstrapErrorDict]
+		customFormatInstances: Sequence[AbstractCustomFeatureValidator]
+		validator: Type[JSV.validators._Validator]
+		ref_resolver: JSV.RefResolver
+		resolved_schema: Any
 
 	KeyRefs = MutableMapping[str, MutableSequence[FeatureLoc]]
 	Id2ElemId = MutableMapping[int, MutableMapping[str, MutableSequence[Any]]]

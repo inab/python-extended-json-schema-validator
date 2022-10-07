@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 		JsonPointer2Val,
 		KeyRefs,
 		RefSchemaTuple,
+		SchemaHashEntry,
 		SecondPassErrorDict,
 	)
 
@@ -68,16 +69,6 @@ if TYPE_CHECKING:
 		@abc.abstractmethod
 		def IsCorrectFormat(cls, value: Any, schema: Optional[Any] = None) -> bool:
 			pass
-
-	class SchemaHashEntry(TypedDict, total=False):
-		file: str
-		schema: Any
-		schema_hash: str
-		errors: MutableSequence[BootstrapErrorDict]
-		customFormatInstances: Sequence[AbstractCustomFeatureValidator]
-		validator: Type[JSV.validators._Validator]
-		ref_resolver: JSV.RefResolver
-		resolved_schema: Any
 
 	class ParsedContentEntry(TypedDict, total=False):
 		file: str
@@ -498,10 +489,8 @@ class ExtensibleValidator(object):
 		# Now we can try to export a resolved version
 		for jsonSchemaURI, schemaObj in p_schemaHash.items():
 			# Now we can try to export a resolved version
-			refResolver = schemaObj["ref_resolver"]
-
 			resolvedSchema = export_resolved_references(
-				refResolver, schemaObj["schema"]
+				jsonSchemaURI, schemaObj["schema"], p_schemaHash
 			)
 			schemaObj["resolved_schema"] = resolvedSchema
 
