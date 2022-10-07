@@ -16,7 +16,7 @@ repos:
 #        files: \.py$
         exclude: "^[^/]*env/|dev-[^/]*/"
         require_serial: true
-        entry: mypy --strict
+        entry: mypy --strict --show-error-codes
 
   - repo: https://github.com/jmfernandez/pre-commit_mirrors-tan
     rev: v22.8.0

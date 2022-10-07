@@ -153,6 +153,13 @@ def main() -> None:
 		action="store_true",
 		default=False,
 	)
+	ap.add_argument(
+		"--dot-report",
+		dest="dotReport",
+		nargs=2,
+		metavar=("FILENAME", "TITLE"),
+		help="Store representation of the schemas in a file using DOT format, with the title given in the second param",
+	)
 
 	grp0 = ap.add_mutually_exclusive_group()
 	grp0.add_argument(
@@ -231,6 +238,8 @@ def main() -> None:
 	loadedSchemasStats = ev.loadJSONSchemasExt(args.jsonSchemaDir, verbose=isVerbose)
 
 	exitCode = 0
+	if loadedSchemasStats.numFileFail > 0:
+		exitCode = 3
 	report = []
 	if args.reportFilename is not None:
 		if args.annotReport:
@@ -238,7 +247,7 @@ def main() -> None:
 		else:
 			annotP = None
 
-		for loadedSchema in loadedSchemasStats.loadedSchemas.values():
+		for loadedSchema in ev.getValidSchemas().values():
 			rep: "MutableMapping[str, Any]" = copy.copy(
 				cast("MutableMapping[str, Any]", loadedSchema)
 			)
@@ -262,12 +271,14 @@ def main() -> None:
 				del rep["schema"]
 
 			report.append(rep)
-	elif len(sys.argv) == 2:
-		if loadedSchemasStats.numFileFail > 0:
-			exitCode = 3
+
+	if args.dotReport is not None:
+		from .draw_schemas import drawSchemasToFile
+
+		drawSchemasToFile(ev, args.dotReport[0], title=args.dotReport[1])
 
 	if len(sys.argv) > 2:
-		numSchemas = len(loadedSchemasStats.loadedSchemas.keys())
+		numSchemas = len(ev.getValidSchemas().keys())
 		if numSchemas == 0:
 			logging.critical(
 				"FATAL ERROR: No schema was successfully loaded. Exiting...\n"

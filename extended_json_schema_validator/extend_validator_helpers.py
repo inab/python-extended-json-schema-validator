@@ -3,6 +3,7 @@
 
 import copy
 from typing import TYPE_CHECKING, cast
+from urllib.parse import urldefrag
 
 import jsonschema as JSV
 import uritools  # type: ignore[import]
@@ -333,3 +334,80 @@ def flattenTraverseListSet(
 					featDict[featName] = list(s_uniqId)
 
 	return (id2ElemId, keyRefs, jp2val)
+
+
+def refResolver_find_in_subschemas(
+	refResolver: "JSV.RefResolver", url: str
+) -> "Optional[Tuple[str, Any]]":
+	subschemas = refResolver._get_subschemas_cache()["$id"]  # type: ignore[attr-defined]
+	if not subschemas:
+		return None
+
+	uri, fragment = urldefrag(url)
+	for subschema in subschemas:
+		if isinstance(subschema["$id"], str):
+			target_uri = refResolver._urljoin_cache(  # type: ignore[attr-defined]
+				refResolver.resolution_scope,
+				subschema["$id"],
+			)
+
+			if target_uri.rstrip("/") == uri.rstrip("/"):
+				if fragment:
+					subschema = refResolver.resolve_fragment(subschema, fragment)  # type: ignore[no-untyped-call]
+				refResolver.store[url] = subschema
+				return url, subschema
+
+	return None
+
+
+def refResolver_resolve(
+	refResolver: "JSV.RefResolver", ref: str
+) -> "Optional[Tuple[str, Any]]":
+	"""
+	Resolve the given reference.
+	"""
+	url = refResolver._urljoin_cache(refResolver.resolution_scope, ref).rstrip("/")  # type: ignore[attr-defined]
+
+	match = refResolver_find_in_subschemas(refResolver, url)
+	if match is not None:
+		return match
+
+	return url, refResolver._remote_cache(url)  # type: ignore[attr-defined]
+
+
+def export_resolved_references(refResolver: "JSV.RefResolver", schema: "Any") -> "Any":
+	"""
+	Resolves json references and merges them into a consolidated schema for validation purposes.
+	Inspired in https://github.com/python-jsonschema/jsonschema/pull/419
+	:param schema:
+	:return: schema merged with resolved references
+	"""
+
+	schema_out = schema
+	pending_copy = True
+	if isinstance(schema, dict):
+		for key, value in schema.items():
+			if key == "$ref":
+				ref_schema = refResolver_resolve(refResolver, value)
+				if ref_schema:
+					return ref_schema[1]
+
+			# When key is not "$ref"
+			resolved_ref = export_resolved_references(refResolver, value)
+			if resolved_ref and resolved_ref != value:
+				if pending_copy:
+					schema_out = copy.copy(schema)
+					pending_copy = False
+
+				schema_out[key] = resolved_ref
+	elif isinstance(schema, list):
+		for (idx, value) in enumerate(schema):
+			resolved_ref = export_resolved_references(refResolver, value)
+			if resolved_ref and resolved_ref != value:
+				if pending_copy:
+					schema_out = copy.copy(schema)
+					pending_copy = False
+
+				schema_out[idx] = resolved_ref
+
+	return schema_out

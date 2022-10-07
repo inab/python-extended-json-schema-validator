@@ -15,6 +15,7 @@ import yaml
 from .extend_validator_helpers import (
 	PLAIN_VALIDATOR_MAPPER,
 	REF_FEATURE,
+	export_resolved_references,
 	extendValidator,
 	flattenTraverseListSet,
 	traverseJSONSchema,
@@ -75,6 +76,8 @@ if TYPE_CHECKING:
 		errors: MutableSequence[BootstrapErrorDict]
 		customFormatInstances: Sequence[AbstractCustomFeatureValidator]
 		validator: Type[JSV.validators._Validator]
+		ref_resolver: JSV.RefResolver
+		resolved_schema: Any
 
 	class ParsedContentEntry(TypedDict, total=False):
 		file: str
@@ -92,7 +95,6 @@ class LoadedSchemasStats(NamedTuple):
 	numDirFail: int
 	numSchemaConsistent: int
 	numSchemaInconsistent: int
-	loadedSchemas: "MutableMapping[str, SchemaHashEntry]"
 
 
 class ExtensibleValidator(object):
@@ -393,9 +395,10 @@ class ExtensibleValidator(object):
 
 			# We need to shadow the original schema
 			localRefSchemaCache = refSchemaCache.copy()
-			localRefSchemaCache[jsonSchemaURI] = metaSchema
+			localRefSchemaCache[metaSchema["$id"]] = metaSchema
+			localRefSchemaCache[metaSchema["$id"][0:-1]] = metaSchema
 			cachedSchemasResolver = JSV.RefResolver(
-				base_uri=jsonSchemaURI, referrer=metaSchema, store=localRefSchemaCache
+				base_uri=jsonSchemaURI, referrer=jsonSchema, store=localRefSchemaCache
 			)
 
 			valErrors = [
@@ -465,6 +468,7 @@ class ExtensibleValidator(object):
 						refSchemaListSet=refSchemaListSet,
 					)
 
+					schemaObj["ref_resolver"] = cachedSchemasResolver
 					p_schemaHash[jsonSchemaURI] = schemaObj
 					numFileOK += 1
 			else:
@@ -490,6 +494,16 @@ class ExtensibleValidator(object):
 				numFileOK, numDirOK, numFileIgnore, numFileFail, numDirFail
 			),
 		)
+
+		# Now we can try to export a resolved version
+		for jsonSchemaURI, schemaObj in p_schemaHash.items():
+			# Now we can try to export a resolved version
+			refResolver = schemaObj["ref_resolver"]
+
+			resolvedSchema = export_resolved_references(
+				refResolver, schemaObj["schema"]
+			)
+			schemaObj["resolved_schema"] = resolvedSchema
 
 		self.logger.log(logLevel, "PASS 0.c: JSON schema set consistency checks")
 
@@ -625,7 +639,6 @@ class ExtensibleValidator(object):
 			numDirFail=numDirFail,
 			numSchemaConsistent=numSchemaConsistent,
 			numSchemaInconsistent=numSchemaInconsistent,
-			loadedSchemas=self.schemaHash,
 		)
 
 	def loadJSONSchemas(
@@ -633,10 +646,13 @@ class ExtensibleValidator(object):
 	) -> int:
 		l_stats = self.loadJSONSchemasExt(verbose=verbose, *args)
 
-		return len(l_stats.loadedSchemas.keys())
+		return len(self.getValidSchemas().keys())
 
 	def getValidSchemas(self) -> "Mapping[str, SchemaHashEntry]":
 		return self.schemaHash
+
+	def getRefSchemaSet(self) -> "Mapping[str, RefSchemaTuple]":
+		return self.refSchemaSet
 
 	# This method invalidates the different cached elements as much
 	# as possible,
@@ -1015,7 +1031,6 @@ class ExtensibleValidator(object):
 						isValid = True
 						self.logger.log(logLevel, "\t- Validated!")
 						numFilePass1OK += 1
-
 				else:
 					self.logger.log(
 						logLevel,
