@@ -4,7 +4,7 @@
 import copy
 import datetime
 import hashlib
-from typing import NamedTuple, TYPE_CHECKING
+from typing import cast, NamedTuple, TYPE_CHECKING
 
 from .extend_validator_helpers import (
 	refResolver_resolve,
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 		Mapping,
 		MutableMapping,
 		MutableSequence,
+		MutableSet,
 		Optional,
 		Sequence,
 		Set,
@@ -50,6 +51,137 @@ def s_sum(the_str: str) -> str:
 	return oP.hexdigest()
 
 
+def payloadProcessor(
+	kPayload: "Mapping[str, Any]",
+) -> "Tuple[Mapping[str, Any], Sequence[str]]":
+	kAll = []
+	kPoss = [kPayload]
+	while len(kPoss) > 0:
+		kAll.extend(copy.deepcopy(kPoss))
+		kPossNext = []
+		for kP in kPoss:
+			kPossNext.extend(kP.get("allOf", []))
+			kPossNext.extend(kP.get("anyOf", []))
+			kPossNext.extend(kP.get("oneOf", []))
+
+		kPoss = kPossNext
+
+	kP = {}
+	req = []
+	if len(kAll) > 0:
+		for kOne in kAll:
+			req.extend(kOne.get("required", []))
+
+			kOP_l = list(map(kOne.get, ("properties", "patternProperties")))
+			kOPN = kOne.get("propertyNames")
+			if kOPN is not None:
+				the_name = kOPN.get("pattern")
+				if the_name is not None:
+					kOP_l.append({the_name: kOPN})
+
+			# Detecting type collisions
+			for kOP in kOP_l:
+				if isinstance(kOP, dict):
+					for kOP_k, kOP_v in kOP.items():
+						kOP_ov = kP.get(kOP_k)
+						if kOP_ov is None:
+							kP[kOP_k] = kOP_v
+						else:
+							# Saving for recombination
+							ot_v = kOP_ov.get("type")
+							t_v = kOP_v.get("type")
+							kOP_ov.update(kOP_v)
+							if ot_v is not None and t_v is not None:
+								n_t_v = []
+								if isinstance(ot_v, list):
+									n_t_v.extend(ot_v)
+								else:
+									n_t_v.append(ot_v)
+								if isinstance(t_v, list):
+									n_t_v.extend(t_v)
+								else:
+									n_t_v.append(t_v)
+								kOP_ov["type"] = n_t_v
+	return kP, req
+
+
+def simplePayloadProcessor(kPayload: "Mapping[str, Any]") -> "Mapping[str, Any]":
+	kAll = []
+	kPoss = [cast("MutableMapping[str, Any]", copy.deepcopy(kPayload))]
+	while len(kPoss) > 0:
+		kAll.extend(kPoss)
+		kPossNext = []
+		for kP in kPoss:
+			for off in ("allOf", "anyOf", "oneOf"):
+				if off in kP:
+					kPossNext.extend(kP.pop(off))
+
+		kPoss = kPossNext
+
+	kP = {}
+	if len(kAll) > 0:
+		# Detecting type collisions
+		for kOP in kAll:
+			if isinstance(kOP, dict):
+				# Saving for recombination
+				ot_v = kP.get("type")
+				t_v = kOP.get("type")
+
+				pp_proc: "MutableMapping[str, Any]" = {}
+				p_v = kP.get("properties")
+				if p_v is not None:
+					p_vp = simplePayloadProcessor(p_v)
+					pp_proc.update(p_vp)
+					del kP["properties"]
+				else:
+					p_vp = None
+
+				pp_v = kP.get("patternProperties")
+				if pp_v is not None:
+					pp_vp = simplePayloadProcessor(pp_v)
+					pp_proc.update(pp_vp)
+					del kP["patternProperties"]
+				else:
+					pp_vp = None
+
+				op_v = kOP.get("properties")
+				if op_v is not None:
+					op_vp = simplePayloadProcessor(op_v)
+					pp_proc.update(op_vp)
+					del kOP["properties"]
+				else:
+					op_vp = None
+
+				opp_v = kOP.get("patternProperties")
+				if opp_v is not None:
+					opp_vp = simplePayloadProcessor(opp_v)
+					pp_proc.update(opp_vp)
+					del kOP["patternProperties"]
+				else:
+					opp_vp = None
+
+				kP.update(kOP)
+
+				# type reconciliation
+				if ot_v is not None and t_v is not None:
+					n_t_v = []
+					if isinstance(ot_v, list):
+						n_t_v.extend(ot_v)
+					else:
+						n_t_v.append(ot_v)
+					if isinstance(t_v, list):
+						n_t_v.extend(t_v)
+					else:
+						n_t_v.append(t_v)
+					kP["type"] = n_t_v
+
+				# properties reconciliation
+				if pp_proc:
+					kP["properties"] = pp_proc
+
+	return kP
+
+
 def genObjectNodes(
 	label: str,
 	kPayload: "Mapping[str, Any]",
@@ -70,18 +202,18 @@ def genObjectNodes(
 	origLabel = None
 	ret_label: str = label
 	# $label =~ s/([\[\]\{\}])/\\$1/g;
-	if kPayload.get("type") == "object":
-		kAll = copy.copy(kPayload.get("allOf", []))
-		kAll.insert(0, kPayload)
 
-		kP = {}
-		req = []
-		if len(kAll) > 0:
-			for kOne in kAll:
-				req.extend(kOne.get("required", []))
-				kOP = kOne.get("properties")
-				if kOP is not None:
-					kP.update(kOP)
+	# if kPayload.get("type", "object") == "object":
+	# 	kAll = copy.copy(kPayload.get("allOf", []))
+	# 	kAll.extend(kPayload.get("anyOf", []))
+	# 	kAll.extend(kPayload.get("oneOf", []))
+	# 	kAll.insert(0, kPayload)
+	k_types = kPayload.get("type", ["object"])
+	if not isinstance(k_types, list):
+		k_types = [k_types]
+	if "object" in k_types:
+		kP, req = payloadProcessor(kPayload)
+
 		if kP:
 			origLabel = label
 			if schema_id is not None:
@@ -101,23 +233,42 @@ def genObjectNodes(
 			ret = []
 
 			for keyP, valP in kP.items():
-				ret.append(
-					genNode(
-						keyP,
-						valP,
-						prefix,
-						pk_set=pk_set,
-						fk_edges=fk_edges,
-						required=keyP in req,
-					)
+				#######valP_types = valP.setdefault("type", ["object"])
+				########if valP_types is None:
+				########	valP_p = simplePayloadProcessor(valP)
+				########	print(f"JH {keyP}\n\n{json.dumps(valP, indent=4)}\n\n{json.dumps(valP_p, indent=4)}")
+				########	valP = valP_p
+				#######if not isinstance(valP_types, list):
+				#######	valP_types = [valP_types]
+				#######if "object" in valP_types:
+				#######	valP_p , _ = payloadProcessor(valP)
+				#######	valP["properties"] = valP_p
+				########valP_p = simplePayloadProcessor(valP)
+
+				valP_p = simplePayloadProcessor(valP)
+				nodestr = genNode(
+					keyP,
+					valP_p,
+					prefix,
+					pk_set=pk_set,
+					fk_edges=fk_edges,
+					required=keyP in req,
 				)
+				if len(nodestr) > 0:
+					ret.append(nodestr)
 
-			ret_label += "\t<TR>\n" + "\t</TR>\n\t<TR>\n".join(ret) + "\t</TR>\n"
+			if len(ret) > 0:
+				ret_label += "\t<TR>\n" + "\n\t</TR>\n\t<TR>\n".join(ret) + "\t</TR>\n"
 
-			if schema_id is not None:
+				if schema_id is not None:
+					ret_label += "</TABLE></FONT>"
+				else:
+					ret_label += "</TABLE></TD>\n"
+			elif schema_id is not None:
 				ret_label += "</TABLE></FONT>"
 			else:
-				ret_label += "</TABLE></TD>\n"
+				# No table for empty content
+				ret_label = ""
 
 	if origLabel is None:
 		# label = f"\t\t<TD COLSPAN=\"2\">{label}</TD>\n"
@@ -139,23 +290,30 @@ def genNode(
 		prefix = ""
 	while "type" in kPayload:
 		k_type = kPayload["type"]
-		d_k_t = DECO.get(k_type)
-		if d_k_t is not None:
-			val += d_k_t
+		if isinstance(k_type, list):
+			k_types = k_type
+		else:
+			k_types = [k_type]
 
-		if k_type == "array":
+		s_k_types: "MutableSet[str]" = set()
+		for k_t in k_types:
+			s_k_t = DECO.get(k_t)
+			if s_k_t is not None:
+				val += s_k_t
+
+		if ("array" in k_types) and ("object" not in k_types):
 			key += "[]"
 
 			k_items = kPayload.get("items")
 			if k_items is not None:
 				kPayload = k_items
 				continue
-		elif k_type == "object":
-			k_props = kPayload.get("properties")
-			if k_props is not None:
-				return genObjectNodes(
-					val, kPayload, prefix + key, pk_set=pk_set, fk_edges=fk_edges
-				)
+		elif "object" in k_types:
+			for kKey in "properties", "patternProperties", "propertyNames":
+				if kKey in kPayload:
+					return genObjectNodes(
+						val, kPayload, prefix + key, pk_set=pk_set, fk_edges=fk_edges
+					)
 
 		break
 
