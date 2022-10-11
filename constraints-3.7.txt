@@ -5,7 +5,7 @@ decorator==5.1.1
 fqdn==1.5.1
 idna==3.4
 importlib-metadata==5.0.0
-importlib-resources==5.9.0
+importlib-resources==5.10.0
 isoduration==20.11.0
 jsonpath-ng==1.5.3
 jsonpointer==2.3
@@ -23,4 +23,4 @@ typing_extensions==4.4.0
 uri-template==1.2.0
 uritools==4.0.0
 webcolors==1.12
-zipp==3.8.1
+zipp==3.9.0
