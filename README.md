@@ -1,8 +1,11 @@
 # Extended JSON Schema validator, Python edition
 
-The JSON schemas should be compliant with JSON Schema Draft04, Draft06 or Draft07 specifications.
+This library and program validates both JSON Schema and JSON-like contents.
+The contents can be physically represented either as JSON or as YAML files.
 
-So, this validation program uses libraries compliant with that specification.
+The JSON schemas should be compliant with JSON Schema versions supported
+by the installed [`jsonschema`](https://python-jsonschema.readthedocs.io/en/stable/) library.
+As of version 4.16 they are Draft04, Draft06, Draft07, Draft2019-09 and Draft2020-12 specifications.
 
 The installation instructions are in [INSTALL.md](INSTALL.md) .
 
@@ -26,15 +29,15 @@ python jsonValidate.py --help
 ```
 usage: jsonValidate.py [-h] [--log-file LOGFILENAME] [--log-format LOGFORMAT] [-q] [-v] [-d] [-C CONFIGFILENAME]
                        [--cache-dir CACHEDIR] [--report REPORTFILENAME] [--annotation ANNOTREPORT] [--verbose-report]
-                       [--error-report] [--dot-report filename title] [--invalidate | --read-only] [--warm-up | --lazy-load]
+                       [--error-report] [--dot-report FILENAME TITLE] [--invalidate | --read-only] [--warm-up | --lazy-load]
                        [-V]
                        json_schema_or_dir [json_file_or_dir [json_file_or_dir ...]]
 
-Validate JSON against JSON Schemas with extensions (version 0.10.5)
+Validate JSON against JSON Schemas with extensions (version 0.10.7)
 
 positional arguments:
-  json_schema_or_dir    The JSON Schema file or directory to validate and use
-  json_file_or_dir      The JSON files or directories to be validated
+  json_schema_or_dir    The JSON Schema, either in JSON or YAML file format, or directory with them to validate and use
+  json_file_or_dir      The JSONs, either in JSON or YAML file formats, or directories with them to be validated
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -56,11 +59,12 @@ optional arguments:
   --verbose-report      When this flag is enabled, the report also embeds the json contents which were validated
   --error-report        When this flag is enabled, the report only includes the entries with errors
   --dot-report FILENAME TITLE
-                        Store representation of the schemas in a file using DOT format, with the title given in the second param
-  --invalidate          Caches are invalidated on startup
-  --read-only           When this flag is enabled, the caches are read-only, avoiding expensive operations related to the caches
-  --warm-up             Caches are warmed up on startup
-  --lazy-load           Caches are warmed up in a lazy way
+                        Depict the schemas in a file using DOT format, providing the title given in the second param
+  --invalidate          Caches managed by the extensions are invalidated on startup
+  --read-only           When this flag is enabled, the caches managed by the extensions are read-only, avoiding expensive
+                        operations related to the caches
+  --warm-up             Caches managed by the extensions are warmed up on startup
+  --lazy-load           Caches managed by the extensions are warmed up in a lazy way
   -V, --version         show program's version number and exit
 ```
 

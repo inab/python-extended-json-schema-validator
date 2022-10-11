@@ -158,17 +158,19 @@ def main() -> None:
 		dest="dotReport",
 		nargs=2,
 		metavar=("FILENAME", "TITLE"),
-		help="Store representation of the schemas in a file using DOT format, with the title given in the second param",
+		help="Depict the schemas in a file using DOT format, providing the title given in the second param",
 	)
 
 	grp0 = ap.add_mutually_exclusive_group()
 	grp0.add_argument(
-		"--invalidate", help="Caches are invalidated on startup", action="store_true"
+		"--invalidate",
+		help="Caches managed by the extensions are invalidated on startup",
+		action="store_true",
 	)
 	grp0.add_argument(
 		"--read-only",
 		dest="isRWCache",
-		help="When this flag is enabled, the caches are read-only, avoiding expensive operations related to the caches",
+		help="When this flag is enabled, the caches managed by the extensions are read-only, avoiding expensive operations related to the caches",
 		action="store_false",
 		default=True,
 	)
@@ -176,26 +178,26 @@ def main() -> None:
 	grp.add_argument(
 		"--warm-up",
 		dest="warmUp",
-		help="Caches are warmed up on startup",
+		help="Caches managed by the extensions are warmed up on startup",
 		action="store_const",
 		const=True,
 	)
 	grp.add_argument(
 		"--lazy-load",
 		dest="warmUp",
-		help="Caches are warmed up in a lazy way",
+		help="Caches managed by the extensions are warmed up in a lazy way",
 		action="store_false",
 	)
 	ap.add_argument(
 		"jsonSchemaDir",
 		metavar="json_schema_or_dir",
-		help="The JSON Schema file or directory to validate and use",
+		help="The JSON Schema, either in JSON or YAML file format, or directory with them to validate and use",
 	)
 	ap.add_argument(
 		"json_files",
 		metavar="json_file_or_dir",
 		nargs="*",
-		help="The JSON files or directories to be validated",
+		help="The JSONs, either in JSON or YAML file formats, or directories with them to be validated",
 	)
 	ap.add_argument(
 		"-V", "--version", action="version", version="%(prog)s version " + ejsv_version

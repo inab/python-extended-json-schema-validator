@@ -197,6 +197,7 @@ class ExtensibleValidator(object):
 						if (
 							os.path.isdir(newJsonSchemaFile)
 							or ".json" in relJsonSchemaFile
+							or ".yaml" in relJsonSchemaFile
 						):
 							jsonSchemaPossibles.append(newJsonSchemaFile)
 					numDirOK += 1
@@ -290,6 +291,7 @@ class ExtensibleValidator(object):
 			idKey = "$id" if "$id" in jsonSchema else "id"
 			jsonSchemaURI = jsonSchema.get(idKey)
 			if jsonSchemaURI is not None:
+				schemaObj["id_key"] = idKey
 				if jsonSchemaURI in refSchemaFile:
 					self.logger.error(
 						"\tERROR: schema in {0} and schema in {1} have the same id".format(
@@ -347,7 +349,7 @@ class ExtensibleValidator(object):
 			assert plain_validator is not None
 
 			# Getting the JSON Schema URI, needed by this
-			idKey = "$id" if "$id" in jsonSchema else "id"
+			idKey = schemaObj["id_key"]
 			jsonSchemaURI = jsonSchema.get(idKey)
 
 			validator, customFormatInstances = extendValidator(
@@ -385,9 +387,11 @@ class ExtensibleValidator(object):
 							metaProps[kF] = vF
 
 			# We need to shadow the original schema
+			id_prop = "$id" if "$id" in metaSchema else "id"
 			localRefSchemaCache = refSchemaCache.copy()
-			localRefSchemaCache[metaSchema["$id"]] = metaSchema
-			localRefSchemaCache[metaSchema["$id"][0:-1]] = metaSchema
+			localRefSchemaCache[metaSchema[id_prop]] = metaSchema
+			if metaSchema[id_prop][-1] == "#":
+				localRefSchemaCache[metaSchema[id_prop][0:-1]] = metaSchema
 			cachedSchemasResolver = JSV.RefResolver(
 				base_uri=jsonSchemaURI, referrer=jsonSchema, store=localRefSchemaCache
 			)
@@ -485,14 +489,6 @@ class ExtensibleValidator(object):
 				numFileOK, numDirOK, numFileIgnore, numFileFail, numDirFail
 			),
 		)
-
-		# Now we can try to export a resolved version
-		for jsonSchemaURI, schemaObj in p_schemaHash.items():
-			# Now we can try to export a resolved version
-			resolvedSchema = export_resolved_references(
-				jsonSchemaURI, schemaObj["schema"], p_schemaHash
-			)
-			schemaObj["resolved_schema"] = resolvedSchema
 
 		self.logger.log(logLevel, "PASS 0.c: JSON schema set consistency checks")
 
@@ -637,7 +633,17 @@ class ExtensibleValidator(object):
 
 		return len(self.getValidSchemas().keys())
 
-	def getValidSchemas(self) -> "Mapping[str, SchemaHashEntry]":
+	def getValidSchemas(
+		self, do_resolve: bool = False
+	) -> "Mapping[str, SchemaHashEntry]":
+		if do_resolve:
+			for jsonSchemaURI, schemaObj in self.schemaHash.items():
+				if "resolved_schema" not in schemaObj:
+					resolvedSchema = export_resolved_references(
+						jsonSchemaURI, schemaObj["schema"], self.schemaHash
+					)
+					schemaObj["resolved_schema"] = resolvedSchema
+
 		return self.schemaHash
 
 	def getRefSchemaSet(self) -> "Mapping[str, RefSchemaTuple]":
@@ -842,7 +848,11 @@ class ExtensibleValidator(object):
 							continue
 
 						newJsonFile = os.path.join(jsonDir, relJsonFile)
-						if os.path.isdir(newJsonFile) or ".json" in relJsonFile:
+						if (
+							os.path.isdir(newJsonFile)
+							or ".json" in relJsonFile
+							or ".yaml" in relJsonFile
+						):
 							jsonPossibles.append(newJsonFile)
 
 					numDirOK += 1

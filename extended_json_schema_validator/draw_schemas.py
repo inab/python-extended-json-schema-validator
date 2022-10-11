@@ -4,6 +4,7 @@
 import copy
 import datetime
 import hashlib
+import logging
 from typing import cast, NamedTuple, TYPE_CHECKING
 
 from .extend_validator_helpers import (
@@ -32,6 +33,8 @@ if TYPE_CHECKING:
 	)
 
 	from .extensible_validator import ExtensibleValidator
+
+module_logger = logging.getLogger(__name__)
 
 DECO = {
 	"object": "{}",
@@ -376,13 +379,13 @@ def schemaPath2JSONPath(schemaPath: str) -> str:
 		elif token == "items":
 			jpath += "[]"
 		else:
-			print(f"Mira {token} {schemaPath}")
+			module_logger.debug(f"Mira {token} {schemaPath}")
 
 	return jpath
 
 
 def drawSchemasToStream(ev: "ExtensibleValidator", DOT: "IO[str]", title: str) -> int:
-	validSchemaDict = ev.getValidSchemas()
+	validSchemaDict = ev.getValidSchemas(do_resolve=True)
 	refSchemaSet = ev.getRefSchemaSet()
 	# Now it is time to draw the schemas themselves
 	pre = f"""
@@ -496,7 +499,7 @@ digraph schemas {{
 				schema_id=jsonSchemaURI,
 			)
 
-			if label is not None:
+			if len(label) > 0:
 				DOT.write(f"\t{nodeId_o} [label=<\n{label}\n>];\n")
 
 	# Second pass

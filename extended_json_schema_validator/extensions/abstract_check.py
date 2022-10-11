@@ -56,6 +56,7 @@ if TYPE_CHECKING:
 		validator: Type[JSV.validators._Validator]
 		ref_resolver: JSV.RefResolver
 		resolved_schema: Any
+		id_key: str
 
 	KeyRefs = MutableMapping[str, MutableSequence[FeatureLoc]]
 	Id2ElemId = MutableMapping[int, MutableMapping[str, MutableSequence[Any]]]

@@ -42,18 +42,26 @@ if TYPE_CHECKING:
 
 	RefSchemaListSet = MutableMapping[str, MutableSequence[RefSchemaTuple]]
 
+# This introspective work allows supporting all the validator
+# variants supported by the jsonschema library
+INTROSPECT_VALIDATOR_MAPPER: "Mapping[str, Type[JSV.validators._Validator]]" = {
+	j_valid.META_SCHEMA["$schema"]: cast("Type[JSV.validators._Validator]", j_valid)
+	for j_valid in filter(
+		lambda j_val: hasattr(j_val, "META_SCHEMA")
+		and isinstance(j_val.META_SCHEMA, dict),
+		JSV.validators.__dict__.values(),
+	)
+}
+
+PLAIN_VALIDATOR_MAPPER: "Mapping[str, Type[JSV.validators._Validator]]" = {
+	"http://json-schema.org/draft-04/hyper-schema#": JSV.validators.Draft4Validator,
+	"http://json-schema.org/draft-06/hyper-schema#": JSV.validators.Draft4Validator,
+	"http://json-schema.org/draft-07/hyper-schema#": JSV.validators.Draft7Validator,
+	**INTROSPECT_VALIDATOR_MAPPER  # fmt: skip
+}
 
 # This method returns both the extended Validator instance and the dynamic validators
 # to be reset on command
-
-PLAIN_VALIDATOR_MAPPER: "Mapping[str, Type[JSV.validators._Validator]]" = {
-	"http://json-schema.org/draft-04/schema#": JSV.validators.Draft4Validator,
-	"http://json-schema.org/draft-04/hyper-schema#": JSV.validators.Draft4Validator,
-	"http://json-schema.org/draft-06/schema#": JSV.validators.Draft6Validator,
-	"http://json-schema.org/draft-06/hyper-schema#": JSV.validators.Draft4Validator,
-	"http://json-schema.org/draft-07/schema#": JSV.validators.Draft7Validator,
-	"http://json-schema.org/draft-07/hyper-schema#": JSV.validators.Draft7Validator,
-}
 
 
 def extendValidator(
