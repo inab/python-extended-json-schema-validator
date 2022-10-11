@@ -28,12 +28,12 @@ python jsonValidate.py --help
 ```
 ```
 usage: jsonValidate.py [-h] [--log-file LOGFILENAME] [--log-format LOGFORMAT] [-q] [-v] [-d] [-C CONFIGFILENAME]
-                       [--cache-dir CACHEDIR] [--report REPORTFILENAME] [--annotation ANNOTREPORT] [--verbose-report]
-                       [--error-report] [--dot-report FILENAME TITLE] [--invalidate | --read-only] [--warm-up | --lazy-load]
-                       [-V]
+                       [--cache-dir CACHEDIR] [-c] [--fix] [--report REPORTFILENAME] [--annotation ANNOTREPORT]
+                       [--verbose-report] [--error-report] [--dot-report FILENAME TITLE] [--invalidate | --read-only]
+                       [--warm-up | --lazy-load] [-V]
                        json_schema_or_dir [json_file_or_dir [json_file_or_dir ...]]
 
-Validate JSON against JSON Schemas with extensions (version 0.10.7)
+Validate JSON against JSON Schemas with extensions (version 0.10.8)
 
 positional arguments:
   json_schema_or_dir    The JSON Schema, either in JSON or YAML file format, or directory with them to validate and use
@@ -51,6 +51,11 @@ optional arguments:
   -C CONFIGFILENAME, --config CONFIGFILENAME
                         Configuration file (used by extensions)
   --cache-dir CACHEDIR  Caching directory (used by extensions)
+  -c, --continue        Show all the error messages instead of stopping on the first one (default when a report file is
+                        requested)
+  --fix                 When some validation error arises, an editor instance (from $EDITOR environment variable) is launched
+                        giving the chance to fix the files, and then it is validated again. The cycle is repeated until all the
+                        files are correct or the program is interrupted
   --report REPORTFILENAME
                         Store validation report (in JSON format) in a file
   --annotation ANNOTREPORT
@@ -71,10 +76,15 @@ optional arguments:
 Next lines run validations using test data:
 
 ```bash
-git clone https://github.com/fairtracks/fairtracks_validator/
-python jsonValidate.py fairtracks_validator/test-data/foreign_key_example/schemas/ fairtracks_validator/test-data/foreign_key_example/good_validation/
-python jsonValidate.py fairtracks_validator/test-data/foreign_key_example/schemas/ fairtracks_validator/test-data/foreign_key_example/bad_validation/
+python jsonValidate.py test-data/foreign_key_example/schemas/ test-data/foreign_key_example/good_validation/
+python jsonValidate.py test-data/foreign_key_example/schemas/ test-data/foreign_key_example/bad_validation/
 ```
+
+If your JSON schemas are properly defined, but you are fixing issues in a set of JSON files, you can run it in an iterative way:
+
+```bash
+git clone https://github.com/inab/benchmarking-data-model
+EDITOR="geany -i" python jsonValidate.py --fix benchmarking-data-model/json-schemas/1.0.x benchmarking-data-model/prototype-data/1.0.x/QfO-fail
 
 And this is an asciinema (to be updated) recording a previous version of FAIRTracks Validator:
 

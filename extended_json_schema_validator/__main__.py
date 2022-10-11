@@ -6,7 +6,10 @@ import copy
 import json
 import logging
 import os
+import shlex
+import subprocess
 import sys
+import tempfile
 import time
 
 import jsonpath_ng  # type: ignore[import]
@@ -22,6 +25,7 @@ if TYPE_CHECKING:
 	from typing import (
 		Any,
 		MutableMapping,
+		Optional,
 	)
 
 # This is needed to assure open suports encoding parameter
@@ -78,6 +82,8 @@ def disable_outerr_buffering() -> None:
 
 DEFAULT_LOGGING_FORMAT = "%(asctime)-15s - [%(levelname)s] %(message)s"
 
+DEFAULT_EDITOR = "vi"
+
 
 def main() -> None:
 	disable_outerr_buffering()
@@ -127,6 +133,20 @@ def main() -> None:
 	)
 	ap.add_argument(
 		"--cache-dir", dest="cacheDir", help="Caching directory (used by extensions)"
+	)
+
+	ap.add_argument(
+		"-c",
+		"--continue",
+		dest="doContinue",
+		action="store_true",
+		help="Show all the error messages instead of stopping on the first one (default when a report file is requested)",
+	)
+	ap.add_argument(
+		"--fix",
+		dest="doFix",
+		action="store_true",
+		help="When some validation error arises, an editor instance (from $EDITOR environment variable) is launched giving the chance to fix the files, and then it is validated again. The cycle is repeated until all the files are correct or the program is interrupted",
 	)
 
 	ap.add_argument(
@@ -242,12 +262,14 @@ def main() -> None:
 	exitCode = 0
 	if loadedSchemasStats.numFileFail > 0:
 		exitCode = 3
-	report = []
+
+	if args.annotReport:
+		annotP = jsonpath_ng.ext.parse(args.annotReport)
+	else:
+		annotP = None
+
+	schema_report = []
 	if args.reportFilename is not None:
-		if args.annotReport:
-			annotP = jsonpath_ng.ext.parse(args.annotReport)
-		else:
-			annotP = None
 
 		for loadedSchema in ev.getValidSchemas().values():
 			rep: "MutableMapping[str, Any]" = copy.copy(
@@ -272,7 +294,7 @@ def main() -> None:
 			if args.isQuietReport:
 				del rep["schema"]
 
-			report.append(rep)
+			schema_report.append(rep)
 
 	if args.dotReport is not None:
 		from .draw_schemas import drawSchemasToFile
@@ -301,40 +323,72 @@ def main() -> None:
 
 		# Now, time to parse
 		jsonFiles = tuple(args.json_files)
-		reportIter = ev.jsonValidateIter(*jsonFiles, verbose=isVerbose)
 
 		exitCode = 0
+		tempReportFile = None
+		fixReportFilename: "Optional[str]" = None
 		if args.reportFilename is not None:
+			fixReportFilename = args.reportFilename
+		elif args.doFix:
+			tempReportFile = tempfile.NamedTemporaryFile(suffix=".json")
+			tempReportFile.close()
+			fixReportFilename = tempReportFile.name
 
-			if args.annotReport:
-				annotP = jsonpath_ng.ext.parse(args.annotReport)
-			else:
-				annotP = None
+		if fixReportFilename:
+			while True:
+				loopExitCode = 0
+				report = copy.copy(schema_report)
+				filenames = [fixReportFilename]
 
-			for rep in reportIter:
-				if len(rep["errors"]) > 0:
-					exitCode = 2
-				elif args.isErrorReport:
-					continue
+				reportIter = ev.jsonValidateIter(*jsonFiles, verbose=isVerbose)
 
-				if annotP is not None:
-					for match in annotP.find(rep["json"]):
-						rep["annot"] = match.value
-						break
-				if args.isQuietReport:
-					del rep["json"]
+				for rep in reportIter:
+					if len(rep["errors"]) > 0:
+						loopExitCode = 2
+					elif args.doFix or args.isErrorReport:
+						# Skip non-error records
+						continue
 
-				report.append(rep)
-		else:
-			for rep in reportIter:
-				if len(rep["errors"]) > 0:
-					exitCode = 2
+					if annotP is not None:
+						for match in annotP.find(rep["json"]):
+							rep["annot"] = match.value
+							break
+					if args.isQuietReport:
+						del rep["json"]
+
+					report.append(rep)
+					if args.doFix:
+						filename = rep.get("file")
+						if filename is not None:
+							filenames.append(filename)
+
+				logging.info(f"* Storing validation report at {fixReportFilename}")
+				with open(fixReportFilename, mode="w", encoding="utf-8") as repH:
+					json.dump(report, repH, indent=4, sort_keys=True)
+
+				if args.doFix and loopExitCode != 0:
+					editor = os.environ.get("EDITOR", DEFAULT_EDITOR)
+					subprocess.call(
+						f"{editor} {' '.join(map(shlex.quote, filenames))}", shell=True
+					)
+				else:
 					break
 
-	if args.reportFilename is not None:
-		logging.info("* Storing validation report at {}".format(args.reportFilename))
+			if tempReportFile is not None:
+				os.unlink(fixReportFilename)
+		else:
+			reportIter = ev.jsonValidateIter(*jsonFiles, verbose=isVerbose)
+			for rep in reportIter:
+				if len(rep["errors"]) > 0:
+					exitCode = 2
+					if not args.doContinue:
+						break
+	elif args.reportFilename is not None:
+		logging.info(
+			"* Storing schema validation report at {}".format(args.reportFilename)
+		)
 		with open(args.reportFilename, mode="w", encoding="utf-8") as repH:
-			json.dump(report, repH, indent=4, sort_keys=True)
+			json.dump(schema_report, repH, indent=4, sort_keys=True)
 
 	sys.exit(exitCode)
 
