@@ -5,4 +5,4 @@ __author__ = "José M. Fernández <https://orcid.org/0000-0002-4806-5140>"
 __copyright__ = "© 2020-2022 Barcelona Supercomputing Center (BSC), ES"
 __license__ = "LGPLv2"
 
-__version__ = version = "0.10.8"
+__version__ = version = "0.10.9"

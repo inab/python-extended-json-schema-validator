@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import abc
+import copy
 import hashlib
 import json
 import logging
@@ -79,13 +80,13 @@ if TYPE_CHECKING:
 
 
 class LoadedSchemasStats(NamedTuple):
-	numFileOK: int
-	numDirOK: int
-	numFileIgnore: int
-	numFileFail: int
-	numDirFail: int
-	numSchemaConsistent: int
-	numSchemaInconsistent: int
+	numFileOK: int = 0
+	numDirOK: int = 0
+	numFileIgnore: int = 0
+	numFileFail: int = 0
+	numDirFail: int = 0
+	numSchemaConsistent: int = 0
+	numSchemaInconsistent: int = 0
 
 
 class ExtensibleValidator(object):
@@ -125,28 +126,23 @@ class ExtensibleValidator(object):
 		self.isRW = isRW
 		self.doNotValidateNoId = not bool(config.get("validate-no-id", True))
 
-	def loadJSONSchemasExt(
-		self, *args: "Union[str, SchemaHashEntry]", verbose: "Optional[bool]" = None
-	) -> LoadedSchemasStats:
-		p_schemaHash = self.schemaHash
+	def _loadAndCacheJsonSchemas(
+		self,
+		args: "Sequence[Union[str, SchemaHashEntry]]",
+		logLevel: int = logging.DEBUG,
+		refSchemaCache: "JsonPointer2Val" = {},
+		refSchemaSet: "MutableMapping[str, RefSchemaTuple]" = {},
+	) -> "Tuple[Sequence[SchemaHashEntry], JsonPointer2Val, MutableMapping[str, RefSchemaTuple], LoadedSchemasStats]":
 		# Schema validation stats
 		numDirOK = 0
 		numDirFail = 0
-		numFileOK = 0
 		numFileIgnore = 0
 		numFileFail = 0
-
-		if verbose:
-			logLevel = logging.INFO
-		else:
-			logLevel = logging.DEBUG
 
 		self.logger.log(logLevel, "PASS 0.a: JSON schema loading and cache generation")
 		jsonSchemaPossibles = list(args)
 		jsonSchemaNext = []
-		refSchemaCache = self.refSchemaCache = {}
 		refSchemaFile: "MutableMapping[str, str]" = {}
-		refSchemaSet = self.refSchemaSet = {}
 		inlineCounter = 0
 		for jsonSchemaPossible in jsonSchemaPossibles:
 			# schemaObj = None
@@ -335,6 +331,26 @@ class ExtensibleValidator(object):
 			# in order to build the RefSchema cache
 			jsonSchemaNext.append(schemaObj)
 
+		loadedSchemasStats = LoadedSchemasStats(
+			numDirOK=numDirOK,
+			numFileIgnore=numFileIgnore,
+			numFileFail=numFileFail,
+			numDirFail=numDirFail,
+		)
+
+		return jsonSchemaNext, refSchemaCache, refSchemaSet, loadedSchemasStats
+
+	def _validateJSONSchemas(
+		self,
+		jsonSchemaNext: "Sequence[SchemaHashEntry]",
+		refSchemaCache: "JsonPointer2Val",
+		logLevel: int = logging.DEBUG,
+	) -> "Tuple[RefSchemaListSet, LoadedSchemasStats]":
+		p_schemaHash = self.schemaHash
+		numFileOK = 0
+		numFileIgnore = 0
+		numFileFail = 0
+
 		self.logger.log(logLevel, "PASS 0.b: JSON schema validation")
 
 		refSchemaListSet: "RefSchemaListSet" = {}
@@ -388,7 +404,7 @@ class ExtensibleValidator(object):
 
 			# We need to shadow the original schema
 			id_prop = "$id" if "$id" in metaSchema else "id"
-			localRefSchemaCache = refSchemaCache.copy()
+			localRefSchemaCache = copy.copy(refSchemaCache)
 			localRefSchemaCache[metaSchema[id_prop]] = metaSchema
 			if metaSchema[id_prop][-1] == "#":
 				localRefSchemaCache[metaSchema[id_prop][0:-1]] = metaSchema
@@ -451,10 +467,12 @@ class ExtensibleValidator(object):
 					self.logger.log(logLevel, "\t- Validated {0}".format(jsonSchemaURI))
 
 					# Reverse mappings, needed later
-					triggeringFeatures = []
+					triggeringFeatures: "MutableMapping[str, AbstractCustomFeatureValidator]" = (
+						{}
+					)
 					for cFI in customFormatInstances:
 						for triggerAttribute, _ in cFI.getValidators():
-							triggeringFeatures.append(triggerAttribute)
+							triggeringFeatures[triggerAttribute] = cFI
 
 					traverseJSONSchema(
 						jsonSchema,
@@ -482,6 +500,52 @@ class ExtensibleValidator(object):
 					}
 				)
 				numFileIgnore += 1
+
+		loadedSchemasStats = LoadedSchemasStats(
+			numFileOK=numFileOK,
+			numFileIgnore=numFileIgnore,
+			numFileFail=numFileFail,
+		)
+
+		return refSchemaListSet, loadedSchemasStats
+
+	def loadJSONSchemasExt(
+		self, *args: "Union[str, SchemaHashEntry]", verbose: "Optional[bool]" = None
+	) -> LoadedSchemasStats:
+		p_schemaHash = self.schemaHash
+		# Schema validation stats
+		numDirOK = 0
+		numDirFail = 0
+		numFileOK = 0
+		numFileIgnore = 0
+		numFileFail = 0
+
+		if verbose:
+			logLevel = logging.INFO
+		else:
+			logLevel = logging.DEBUG
+
+		# Pass 0.a
+		(
+			jsonSchemaNext,
+			refSchemaCache,
+			refSchemaSet,
+			initialStats,
+		) = self._loadAndCacheJsonSchemas(args=args, logLevel=logLevel)
+		self.refSchemaCache = refSchemaCache
+		self.refSchemaSet = refSchemaSet
+		numDirOK = initialStats.numDirOK
+		numDirFail = initialStats.numDirFail
+		numFileIgnore = initialStats.numFileIgnore
+		numFileFail = initialStats.numFileFail
+
+		# Pass 0.b
+		refSchemaListSet, valStats = self._validateJSONSchemas(
+			jsonSchemaNext, refSchemaCache, logLevel=logLevel
+		)
+		numFileIgnore += valStats.numFileIgnore
+		numFileFail += valStats.numFileFail
+		numFileOK += valStats.numFileOK
 
 		self.logger.log(
 			logLevel,

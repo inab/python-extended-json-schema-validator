@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, NamedTuple, cast
 
 import xdg  # type: ignore[import]
 
+import jsonschema as JSV
+
 
 class FeatureLoc(NamedTuple):
 	id: str
@@ -74,6 +76,10 @@ class CheckContext(NamedTuple):
 
 
 class AbstractCustomFeatureValidator(abc.ABC):
+	FRAGMENT_VALIDATOR: "Final[Type[JSV.validators._Validator]]" = (
+		JSV.validators.Draft7Validator
+	)
+
 	def __init__(
 		self,
 		schemaURI: str,
@@ -199,6 +205,17 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	@property
 	def needsSecondPass(self) -> bool:
 		return False
+
+	def _fragment_validate(self, j_to_val: "Any") -> "Iterator[ValidationError]":
+		"""
+		There can be more than one element to validate
+		"""
+		trigger_schema = {
+			"$schema": self.FRAGMENT_VALIDATOR.META_SCHEMA["$schema"],
+			"properties": self.triggerJSONSchemaDef,
+		}
+
+		return self.FRAGMENT_VALIDATOR(trigger_schema).iter_errors(j_to_val)
 
 	# @property.currentJ.setter
 	def setCurrentJSONFilename(self, newVal: str = "(unset)") -> None:

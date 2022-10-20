@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import copy
+import logging
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urldefrag
 
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
 	CustomTypeCheckerCallable = Callable[[Callable[[Any], Any], Any], bool]
 
 	RefSchemaListSet = MutableMapping[str, MutableSequence[RefSchemaTuple]]
+
+module_logger = logging.getLogger(__name__)
 
 # This introspective work allows supporting all the validator
 # variants supported by the jsonschema library
@@ -139,7 +142,7 @@ REF_FEATURE = "$ref"
 def traverseJSONSchema(
 	jsonObj: "Any",
 	schemaURI: "Optional[str]" = None,
-	keys: "Union[MutableSet[str], Sequence[str]]" = set(),
+	keys: "Mapping[str, AbstractCustomFeatureValidator]" = {},
 	fragment: "Optional[str]" = None,
 	refSchemaListSet: "RefSchemaListSet" = {},
 ) -> "Optional[RefSchemaListSet]":
@@ -180,11 +183,13 @@ def traverseJSONSchema(
 
 	refSchemaListSet.setdefault(schemaURI, []).append((id2ElemId, keyRefs, jp2val))
 
-	# Translating it into an set
-	keySet = keys if isinstance(keys, set) else set(keys)
+	# Translating it
+	keySet = cast(
+		"MutableMapping[str, Optional[AbstractCustomFeatureValidator]]", copy.copy(keys)
+	)
 
 	# And adding the '$ref' feature
-	keySet.add(REF_FEATURE)
+	keySet[REF_FEATURE] = None
 
 	def _traverse_dict(
 		schemaURI: str,
@@ -227,18 +232,31 @@ def traverseJSONSchema(
 
 				# Is the key among the "special ones"?
 				if k in keySet:
+					legit = True
+					cFI = keySet.get(k)
+					val_err: "Optional[Sequence[JSV.exceptions.ValidationError]]" = None
+					if cFI is not None:
+						val_err_iter = cFI._fragment_validate(j)
+						val_err = list(val_err_iter)
+						legit = len(val_err) == 0
+
 					# Saving the correspondence from Python address
 					# to unique id of the feature
-					id2ElemId.setdefault(theId, {})[k] = [elemId]
-					keyRefs.setdefault(k, []).append(
-						FeatureLoc(
-							schemaURI=schemaURI,
-							fragment=fragment,
-							path=elemPath,
-							context=j,
-							id=elemId,
+					if legit:
+						id2ElemId.setdefault(theId, {})[k] = [elemId]
+						keyRefs.setdefault(k, []).append(
+							FeatureLoc(
+								schemaURI=schemaURI,
+								fragment=fragment,
+								path=elemPath,
+								context=j,
+								id=elemId,
+							)
 						)
-					)
+					else:
+						module_logger.debug(
+							f"At {schemaURI}, f {fragment} p {elemPath} discarded for key {k} class {cFI.__class__.__name__}\n{val_err}"
+						)
 
 				if isinstance(v, dict):
 					# Fragment must not be propagated to children
