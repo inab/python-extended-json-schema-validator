@@ -20,4 +20,4 @@ six==1.16.0
 uri-template==1.2.0
 uritools==4.0.0
 webcolors==1.12
-zipp==3.9.0
+zipp==3.10.0
