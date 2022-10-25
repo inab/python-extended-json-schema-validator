@@ -4,6 +4,7 @@
 import copy
 import datetime
 import hashlib
+import html
 import logging
 from typing import cast, NamedTuple, TYPE_CHECKING
 
@@ -46,6 +47,7 @@ class FKEdge(NamedTuple):
 	fromNodeId: str
 	mport: str
 	toNodeId: str
+	tooltip: str
 
 
 def s_sum(the_str: str) -> str:
@@ -66,6 +68,10 @@ def payloadProcessor(
 			kPossNext.extend(kP.get("allOf", []))
 			kPossNext.extend(kP.get("anyOf", []))
 			kPossNext.extend(kP.get("oneOf", []))
+			for p_name in ("then", "else"):
+				p_pl = kP.get(p_name)
+				if p_pl is not None:
+					kPossNext.append(p_pl)
 
 		kPoss = kPossNext
 
@@ -118,6 +124,10 @@ def simplePayloadProcessor(kPayload: "Mapping[str, Any]") -> "Mapping[str, Any]"
 			for off in ("allOf", "anyOf", "oneOf"):
 				if off in kP:
 					kPossNext.extend(kP.pop(off))
+			for p_name in ("then", "else"):
+				p_pl = kP.get(p_name)
+				if p_pl is not None:
+					kPossNext.append(p_pl)
 
 		kPoss = kPossNext
 
@@ -220,16 +230,17 @@ def genObjectNodes(
 		if kP:
 			origLabel = label
 			if schema_id is not None:
+				# See https://graphviz.org/faq/font/#what-about-svg-fonts
 				ret_label = f"""
-<FONT FACE="Courier">
+<FONT FACE="Monospace">
 <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" BGCOLOR="white">
 	<TR>
-		<TD COLSPAN="2" ALIGN="CENTER" PORT="schema" BGCOLOR="lightgreen"><FONT POINT-SIZE="20">{label}</FONT><BR/><FONT POINT-SIZE="8">{schema_id}</FONT></TD>
+		<TD COLSPAN="2" ALIGN="CENTER" PORT="schema" BGCOLOR="lightgreen"><FONT POINT-SIZE="20">{html.escape(label)}</FONT><BR/><FONT POINT-SIZE="8">{html.escape(schema_id)}</FONT></TD>
 	</TR>
 """
 			else:
 				ret_label = f"""
-		<TD ALIGN="LEFT" PORT="{origPrefix}">{label}</TD>
+		<TD ALIGN="LEFT" PORT="{html.escape(origPrefix)}">{html.escape(label)}</TD>
 		<TD BORDER="0"><TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
 """
 
@@ -328,6 +339,7 @@ def genNode(
 
 	# Labelling the foreign keys
 	preval = ""
+	val = html.escape(val)
 	if fk_edges is not None:
 		for fk_edge in fk_edges:
 			if fk_edge.mport == toHeaderName:
@@ -343,9 +355,7 @@ def genNode(
 	if required:
 		val = f"<B>{val}</B>"
 
-	return (
-		f'\t\t<TD ALIGN="LEFT" PORT="{toHeaderName}" COLSPAN="2">{val}{preval}</TD>\n'
-	)
+	return f'\t\t<TD ALIGN="LEFT" PORT="{html.escape(toHeaderName)}" COLSPAN="2">{val}{preval}</TD>\n'
 	# return f'\t\t<TD ALIGN="LEFT" PORT="{toHeaderName}" SIDES="LTB">{val}</TD><TD ALIGN="RIGHT" SIDES="RTB">{preval}</TD>\n'
 
 
@@ -388,10 +398,12 @@ def drawSchemasToStream(ev: "ExtensibleValidator", DOT: "IO[str]", title: str) -
 	validSchemaDict = ev.getValidSchemas(do_resolve=True)
 	refSchemaSet = ev.getRefSchemaSet()
 	# Now it is time to draw the schemas themselves
+	# See https://graphviz.org/faq/font/#what-about-svg-fonts
 	pre = f"""
 digraph schemas {{
-	graph[ rankdir=LR, ranksep=2, fontsize=60, fontname="Helvetica", labelloc=t, label=< {title} <br/> <font point-size="40">(as of {datetime.datetime.now().isoformat()})</font> >  ];
+	graph[ rankdir=LR, ranksep=2, fontsize=60, fontname="Sans-Serif", labelloc=t, label=< {title} <br/> <font point-size="40">(as of {datetime.datetime.now().isoformat()})</font> >  ];
 	node [shape=tab, style=filled, fillcolor="green"];
+	edge [penwidth=2, fontname="Serif"];
 """
 	# 	node [shape=record];
 	DOT.write(pre)
@@ -403,11 +415,12 @@ digraph schemas {{
 	for jsonSchemaURI, schemaObj in validSchemaDict.items():
 		resolved_schema = schemaObj["resolved_schema"]
 
-		nodeId = f"s{sCounter}"
-
-		if "properties" in resolved_schema:
-			sHash[jsonSchemaURI] = nodeId
-			sCounter += 1
+		for prop_name in ("properties", "allOf", "oneOf", "someOf"):
+			if prop_name in resolved_schema:
+				nodeId = f"s{sCounter}"
+				sHash[jsonSchemaURI] = nodeId
+				sCounter += 1
+				break
 
 	# Gathering edges for foreign keys
 	fk_edges: "MutableSequence[FKEdge]" = []
@@ -415,6 +428,10 @@ digraph schemas {{
 	pk_sets: "MutableMapping[str, Set[str]]" = {}
 	for jsonSchemaURI, jsonSchemaSet in refSchemaSet.items():
 		fromNodeId = sHash.get(jsonSchemaURI)
+		fromHeaderName = jsonSchemaURI
+		rSlash = fromHeaderName.rfind("/")
+		if rSlash != -1:
+			fromHeaderName = fromHeaderName[rSlash + 1 :]
 		schemaObj_o = validSchemaDict.get(jsonSchemaURI)
 
 		if fromNodeId is None:
@@ -452,8 +469,18 @@ digraph schemas {{
 
 						mport = s_sum(schemaPath2JSONPath(the_path))
 
+						tooltip = (
+							fromHeaderName
+							+ "/"
+							+ schemaPath2JSONPath(the_path)
+							+ " -> "
+							+ toHeaderName
+						)
 						fk_edge = FKEdge(
-							fromNodeId=fromNodeId, mport=mport, toNodeId=toNodeId
+							fromNodeId=fromNodeId,
+							mport=mport,
+							toNodeId=toNodeId,
+							tooltip=tooltip,
 						)
 						fk_edges.append(fk_edge)
 						fk_edges_d.setdefault(fromNodeId, []).append(fk_edge)
@@ -488,8 +515,6 @@ digraph schemas {{
 			if rSlash != -1:
 				headerName = headerName[rSlash + 1 :]
 
-			label = headerName
-
 			label = genObjectNodes(
 				headerName,
 				resolved_schema,
@@ -499,17 +524,27 @@ digraph schemas {{
 				schema_id=jsonSchemaURI,
 			)
 
+			description = resolved_schema.get(
+				"description", resolved_schema.get("title", headerName)
+			)
+
 			if len(label) > 0:
-				DOT.write(f"\t{nodeId_o} [label=<\n{label}\n>];\n")
+				DOT.write(
+					f"\t{nodeId_o} [tooltip=<{html.escape(description)}> label=<\n{label}\n>];\n"
+				)
 
 	# Second pass
 	for fk_edge in fk_edges:
 		customEdge = ""
 		if fk_edge.fromNodeId == fk_edge.toNodeId:
-			customEdge = " [headport=e]"
+			customEdge = " headport=e"
+
+		edge_tooltip = (
+			html.escape(fk_edge.tooltip).replace("[", "&#91;").replace("]", "&#93;")
+		)
 
 		DOT.write(
-			f'\t{fk_edge.fromNodeId}:"{fk_edge.mport}" -> {fk_edge.toNodeId}:schema{customEdge};\n'
+			f'\t{fk_edge.fromNodeId}:"{fk_edge.mport}" -> {fk_edge.toNodeId}:schema [label=<{edge_tooltip}> tooltip=<{edge_tooltip}> {customEdge}];\n'
 		)
 
 	post = """
