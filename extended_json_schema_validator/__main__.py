@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -354,7 +355,8 @@ def main() -> None:
 							rep["annot"] = match.value
 							break
 					if args.isQuietReport:
-						del rep["json"]
+						if "json" in rep:
+							del rep["json"]
 
 					report.append(rep)
 					if args.doFix:
@@ -368,9 +370,16 @@ def main() -> None:
 
 				if args.doFix and loopExitCode != 0:
 					editor = os.environ.get("EDITOR", DEFAULT_EDITOR)
-					subprocess.call(
-						f"{editor} {' '.join(map(shlex.quote, filenames))}", shell=True
-					)
+					try:
+						fix_proc = subprocess.Popen(
+							f"{editor} {' '.join(map(shlex.quote, filenames))}",
+							shell=True,
+						)
+						fix_proc.wait()
+					except KeyboardInterrupt as ke:
+						# Signaling the child
+						fix_proc.send_signal(signal.SIGINT)
+						raise ke
 				else:
 					break
 
