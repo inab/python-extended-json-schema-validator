@@ -72,6 +72,7 @@ jobs:
         id: cpr
         uses: peter-evans/create-pull-request@v4
         with:
+          title: Updated constraints (triggered by ${{ env.GITHUB_SHA }})
           delete-branch: true
           commit-message: "[create-pull-request] Automatically commit updated contents (constraints)"
       - name: Check outputs
