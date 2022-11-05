@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [ "3.6", "3.7", "3.8", "3.9", "3.10" ]
+        python-version: [ "3.6", "3.7", "3.8", "3.9", "3.10", "3.11" ]
     name: Pre-commit python ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v3
@@ -25,7 +25,7 @@ jobs:
           pip freeze > constraints-${{ matrix.python-version }}.txt
       - name: Check transitive dependencies licences
         id: license_check_report
-        uses: pilosus/action-pip-license-checker@v0.6.2
+        uses: pilosus/action-pip-license-checker@v0.6.3
         with:
           requirements: constraints-${{ matrix.python-version }}.txt
           fail: 'StrongCopyleft'
@@ -39,11 +39,13 @@ jobs:
         with:
           path: .mypy_cache/${{ matrix.python-version }}
           key: mypy-${{ matrix.python-version }}
-      - uses: pre-commit/action@v3.0.0
+      - name: 'pre-commit (standard)'
+        uses: pre-commit/action@v3.0.0
         if: ${{ matrix.python-version != '3.6' }}
         with:
           extra_args: --all -c .pre-commit-config-gh.yaml
-      - uses: pre-commit/action@v3.0.0
+      - name: 'pre-commit (custom Python ${{ matrix.python-version }})'
+        uses: pre-commit/action@v3.0.0
         if: ${{ matrix.python-version == '3.6' }}
         with:
           extra_args: --all -c .pre-commit-config-gh-${{ matrix.python-version }}.yaml
