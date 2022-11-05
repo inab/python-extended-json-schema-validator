@@ -27,49 +27,68 @@ A description of the base JSON Schema extensions implemented in this repository 
 python jsonValidate.py --help
 ```
 ```
-usage: jsonValidate.py [-h] [--log-file LOGFILENAME] [--log-format LOGFORMAT] [-q] [-v] [-d] [-C CONFIGFILENAME]
-                       [--cache-dir CACHEDIR] [-c] [--fix] [--report REPORTFILENAME] [--annotation ANNOTREPORT]
-                       [--verbose-report] [--error-report] [--dot-report FILENAME TITLE] [--invalidate | --read-only]
+usage: jsonValidate.py [-h] [--log-file LOGFILENAME] [--log-format LOGFORMAT] [-q] [-v] [-d]
+                       [-C CONFIGFILENAME] [--cache-dir CACHEDIR] [-c]
+                       [--schema_id_path SCHEMA_ID_PATH] [--guess-schema] [--fix]
+                       [--report REPORTFILENAME] [--annotation ANNOTREPORT] [--verbose-report]
+                       [--error-report] [--dot-report FILENAME TITLE] [--invalidate | --read-only]
                        [--warm-up | --lazy-load] [-V]
                        json_schema_or_dir [json_file_or_dir [json_file_or_dir ...]]
 
-Validate JSON against JSON Schemas with extensions (version 0.10.8)
+Validate JSON against JSON Schemas with extensions (version 0.11.0)
 
 positional arguments:
-  json_schema_or_dir    The JSON Schema, either in JSON or YAML file format, or directory with them to validate and use
-  json_file_or_dir      The JSONs, either in JSON or YAML file formats, or directories with them to be validated
+  json_schema_or_dir    The JSON Schema, either in JSON or YAML file format, or directory with
+                        them to validate and use
+  json_file_or_dir      The JSONs, either in JSON or YAML file formats, or directories with them
+                        to be validated (default: None)
 
 optional arguments:
   -h, --help            show this help message and exit
   --log-file LOGFILENAME
-                        Store messages in a file instead of using standard error and standard output
+                        Store messages in a file instead of using standard error and standard
+                        output (default: None)
   --log-format LOGFORMAT
-                        Format of log messages
-  -q, --quiet           Only show engine warnings and errors
-  -v, --verbose         Show verbose (informational) messages
-  -d, --debug           Show debug messages (use with care, as it could potentially disclose sensitive contents)
+                        Format of log messages (default: %(asctime)-15s - [%(levelname)s]
+                        %(message)s)
+  -q, --quiet           Only show engine warnings and errors (default: None)
+  -v, --verbose         Show verbose (informational) messages (default: None)
+  -d, --debug           Show debug messages (use with care, as it could potentially disclose
+                        sensitive contents) (default: None)
   -C CONFIGFILENAME, --config CONFIGFILENAME
-                        Configuration file (used by extensions)
-  --cache-dir CACHEDIR  Caching directory (used by extensions)
-  -c, --continue        Show all the error messages instead of stopping on the first one (default when a report file is
-                        requested)
-  --fix                 When some validation error arises, an editor instance (from $EDITOR environment variable) is launched
-                        giving the chance to fix the files, and then it is validated again. The cycle is repeated until all the
-                        files are correct or the program is interrupted
+                        Configuration file (used by extensions) (default: None)
+  --cache-dir CACHEDIR  Caching directory (used by extensions) (default: None)
+  -c, --continue        Show all the error messages instead of stopping on the first one (default
+                        when a report file is requested) (default: False)
+  --schema_id_path SCHEMA_ID_PATH
+                        When the content read from the file is going to be validated, JSON Path
+                        (accepted by jsonpath-ng) used to get the schema id which identifies the
+                        schema to be used by the validator (default:
+                        "@schema"|"_schema"|"$schema")
+  --guess-schema        Only show engine warnings and errors (default: False)
+  --fix                 When some validation error arises, an editor instance (from $EDITOR
+                        environment variable) is launched giving the chance to fix the files, and
+                        then it is validated again. The cycle is repeated until all the files are
+                        correct or the program is interrupted (default: False)
   --report REPORTFILENAME
-                        Store validation report (in JSON format) in a file
+                        Store validation report (in JSON format) in a file (default: None)
   --annotation ANNOTREPORT
-                        JSON Path (accepted by jsonpath-ng) to extract an annotation to include from validated JSON in the
-                        report (for instance, '$._id')
-  --verbose-report      When this flag is enabled, the report also embeds the json contents which were validated
-  --error-report        When this flag is enabled, the report only includes the entries with errors
+                        JSON Path (accepted by jsonpath-ng) to extract an annotation to include
+                        from validated JSON in the report (for instance, '$._id') (default: None)
+  --verbose-report      When this flag is enabled, the report also embeds the json contents which
+                        were validated (default: True)
+  --error-report        When this flag is enabled, the report only includes the entries with
+                        errors (default: False)
   --dot-report FILENAME TITLE
-                        Depict the schemas in a file using DOT format, providing the title given in the second param
-  --invalidate          Caches managed by the extensions are invalidated on startup
-  --read-only           When this flag is enabled, the caches managed by the extensions are read-only, avoiding expensive
-                        operations related to the caches
-  --warm-up             Caches managed by the extensions are warmed up on startup
-  --lazy-load           Caches managed by the extensions are warmed up in a lazy way
+                        Depict the schemas in a file using DOT format, providing the title given
+                        in the second param (default: None)
+  --invalidate          Caches managed by the extensions are invalidated on startup (default:
+                        False)
+  --read-only           When this flag is enabled, the caches managed by the extensions are read-
+                        only, avoiding expensive operations related to the caches (default: True)
+  --warm-up             Caches managed by the extensions are warmed up on startup (default: None)
+  --lazy-load           Caches managed by the extensions are warmed up in a lazy way (default:
+                        True)
   -V, --version         show program's version number and exit
 ```
 
