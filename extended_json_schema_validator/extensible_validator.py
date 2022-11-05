@@ -9,6 +9,8 @@ import logging
 import os
 from typing import NamedTuple, TYPE_CHECKING, cast
 
+import jsonpath_ng  # type: ignore[import]
+import jsonpath_ng.ext  # type: ignore[import]
 import jsonschema as JSV
 import uritools  # type: ignore[import]
 import yaml
@@ -96,6 +98,7 @@ class ExtensibleValidator(object):
 
 	SCHEMA_KEY = "$schema"
 	ALT_SCHEMA_KEYS: "Sequence[str]" = ["@schema", "_schema", SCHEMA_KEY]
+	DEFAULT_SCHEMA_KEY_JP: "str" = '"' + '"|"'.join(ALT_SCHEMA_KEYS) + '"'
 
 	def __init__(
 		self,
@@ -288,6 +291,7 @@ class ExtensibleValidator(object):
 			jsonSchemaURI = jsonSchema.get(idKey)
 			if jsonSchemaURI is not None:
 				schemaObj["id_key"] = idKey
+				schemaObj["uri"] = jsonSchemaURI
 				if jsonSchemaURI in refSchemaFile:
 					self.logger.error(
 						"\tERROR: schema in {0} and schema in {1} have the same id".format(
@@ -365,8 +369,7 @@ class ExtensibleValidator(object):
 			assert plain_validator is not None
 
 			# Getting the JSON Schema URI, needed by this
-			idKey = schemaObj["id_key"]
-			jsonSchemaURI = jsonSchema.get(idKey)
+			jsonSchemaURI = schemaObj["uri"]
 
 			validator, customFormatInstances = extendValidator(
 				jsonSchemaURI,
@@ -796,7 +799,11 @@ class ExtensibleValidator(object):
 		return hashlib.sha1(json_canon.encode("utf-8")).hexdigest()
 
 	def jsonValidateIter(
-		self, *args: "Union[str, ParsedContentEntry]", verbose: "Optional[bool]" = None
+		self,
+		*args: "Union[str, ParsedContentEntry]",
+		verbose: "Optional[bool]" = None,
+		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
+		guess_unmatched: "bool" = False,
 	) -> "Iterator[Any]":
 		"""
 		This method validates a given list of JSON contents.
@@ -819,6 +826,24 @@ class ExtensibleValidator(object):
 			logLevel = logging.INFO
 		else:
 			logLevel = logging.DEBUG
+
+		# Fail fast if it is not a valid JSON Path expression
+		if self.jsonRootTag is not None:
+			# We do not know in advance whether the json root tag is a JSON Path expression itself
+			if "." in self.jsonRootTag:
+				newSchemaKeyExpr = self.jsonRootTag
+			else:
+				newSchemaKeyExpr = '"' + self.jsonRootTag + '"'
+
+			if len(schema_key_expr) > 0:
+				newSchemaKeyExpr = (
+					f"({newSchemaKeyExpr}.{schema_key_expr})|{schema_key_expr}"
+				)
+
+			schema_key_expr = newSchemaKeyExpr
+
+		self.logger.debug(f"JSON Path to identify the schema is {schema_key_expr}")
+		schemaP = jsonpath_ng.ext.parse(schema_key_expr)
 
 		# JSON validation stats
 		numDirOK = 0
@@ -999,18 +1024,17 @@ class ExtensibleValidator(object):
 					jsonPossibles[iJsonPossible] = jsonObj
 
 			# Getting the schema id to locate the proper schema to validate against
-			if (self.jsonRootTag is not None) and (self.jsonRootTag in jsonDoc):
-				jsonRoot = jsonDoc[self.jsonRootTag]
-			else:
-				jsonRoot = jsonDoc
-
 			jsonSchemaIdVal: "Optional[str]" = None
-			for altSchemaKey in self.ALT_SCHEMA_KEYS:
-				if altSchemaKey in jsonRoot:
-					jsonSchemaIdVal = jsonRoot[altSchemaKey]
-					break
+			offered_schema_ids: "Sequence[str]" = list(
+				map(lambda x: cast("str", x.value), schemaP.find(jsonDoc))
+			)
+			if len(offered_schema_ids) > 0:
+				jsonSchemaIdVal = offered_schema_ids[0]
+				if len(offered_schema_ids) > 1:
+					self.logger.warning(
+						f"More than one match for {jsonFile}: {offered_schema_ids}"
+					)
 
-			if jsonSchemaIdVal is not None:
 				if jsonSchemaIdVal in p_schemaHash:
 					self.logger.log(
 						logLevel, "\t- Using {0} schema".format(jsonSchemaIdVal)
@@ -1113,6 +1137,103 @@ class ExtensibleValidator(object):
 					yield jsonPossibles[iJsonPossible]
 					jsonPossibles[iJsonPossible] = None
 					numFilePass1Ignore += 1
+			elif guess_unmatched:
+				all_errors: "MutableSequence[str]" = []
+
+				# Brute force testing all the schemas
+				for schemaObj in p_schemaHash.values():
+					jsonSchemaIdVal = schemaObj["uri"]
+					self.logger.log(
+						logLevel, "\t- Using {0} schema".format(jsonSchemaIdVal)
+					)
+
+					for customFormatInstance in schemaObj["customFormatInstances"]:
+						customFormatInstance.setCurrentJSONFilename(jsonFile)
+
+					# Registering the dynamic validators to be cleaned up
+					# when the validator finishes the session
+					if jsonSchemaIdVal not in dynSchemaSet:
+						dynSchemaSet.add(jsonSchemaIdVal)
+						localDynSchemaVal = schemaObj["customFormatInstances"]
+						if localDynSchemaVal:
+							# We reset them, in case they were dirty
+							self._resetDynamicValidators(localDynSchemaVal)
+							dynSchemaValList.extend(localDynSchemaVal)
+
+					jsonSchema = schemaObj["schema"]
+					validator = schemaObj["validator"]
+
+					cachedSchemasResolver = JSV.RefResolver(
+						base_uri=jsonSchemaIdVal,
+						referrer=jsonSchema,
+						store=self.refSchemaCache,
+					)
+
+					failed_val = False
+					these_errors = list(
+						validator(
+							jsonSchema,
+							format_checker=self.customFormatCheckerInstance,
+							resolver=cachedSchemasResolver,
+						).iter_errors(jsonDoc)
+					)
+
+					if len(these_errors) == 0:
+						jsonObj["schema_hash"] = schemaObj["schema_hash"]
+						jsonObj["schema_id"] = jsonSchemaIdVal
+						all_errors = []
+						break
+
+					all_errors.extend(these_errors)
+
+					self.logger.debug(
+						f"{jsonFile} did not validate against {jsonSchemaIdVal}"
+					)
+
+				if len(all_errors) == 0:
+					self.logger.log(
+						logLevel, "\t- Guessed {0} schema".format(jsonSchemaIdVal)
+					)
+					# Does the schema contain a PK declaration?
+					isValid = True
+					self.logger.log(logLevel, "\t- Validated!")
+					numFilePass1OK += 1
+				else:
+					self.logger.error(
+						"\t- ERRORS:\n"
+						+ "\n".join(
+							map(
+								lambda se: "\t\tPath: {0} . Message: {1}".format(
+									"/" + "/".join(map(lambda e: str(e), se.path)),
+									se.message,
+								),
+								valErrors,
+							)
+						)
+					)
+					for valError in valErrors:
+						if isinstance(valError.validator_value, dict):
+							schema_error_reason = valError.validator_value.get(
+								"reason", "schema_error"
+							)
+						else:
+							schema_error_reason = "schema_error"
+
+						errPath = "/" + "/".join(map(lambda e: str(e), valError.path))
+						errors.append(
+							{
+								"reason": schema_error_reason,
+								"description": "Path: {0} . Message: {1}".format(
+									errPath, valError.message
+								),
+								"path": errPath,
+							}
+						)
+
+					# Masking it for the next loop
+					yield jsonPossibles[iJsonPossible]
+					jsonPossibles[iJsonPossible] = None
+					numFilePass1Fail += 1
 			else:
 				self.logger.log(
 					logLevel,
@@ -1177,6 +1298,7 @@ class ExtensibleValidator(object):
 				yield jsonObjPossible
 		else:
 			self.logger.log(logLevel, "PASS 2: (skipped)")
+			yield from jsonPossibles
 
 		self.logger.log(
 			logLevel,
@@ -1192,7 +1314,11 @@ class ExtensibleValidator(object):
 		)
 
 	def jsonValidate(
-		self, *args: "Union[str, ParsedContentEntry]", verbose: "Optional[bool]" = None
+		self,
+		*args: "Union[str, ParsedContentEntry]",
+		verbose: "Optional[bool]" = None,
+		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
+		guess_unmatched: "bool" = False,
 	) -> "Sequence[Any]":
 		"""
 		This method validates a given list of JSON contents.
@@ -1210,4 +1336,11 @@ class ExtensibleValidator(object):
 		described above.
 		"""
 
-		return list(self.jsonValidateIter(verbose=verbose, *args))
+		return list(
+			self.jsonValidateIter(
+				verbose=verbose,
+				schema_key_expr=schema_key_expr,
+				guess_unmatched=guess_unmatched,
+				*args,
+			)
+		)

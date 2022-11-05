@@ -89,7 +89,8 @@ DEFAULT_EDITOR = "vi"
 def main() -> None:
 	disable_outerr_buffering()
 	ap = argparse.ArgumentParser(
-		description=f"Validate JSON against JSON Schemas with extensions (version {ejsv_version})"
+		formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+		description=f"Validate JSON against JSON Schemas with extensions (version {ejsv_version})",
 	)
 	ap.add_argument(
 		"--log-file",
@@ -142,6 +143,19 @@ def main() -> None:
 		dest="doContinue",
 		action="store_true",
 		help="Show all the error messages instead of stopping on the first one (default when a report file is requested)",
+	)
+	ap.add_argument(
+		"--schema_id_path",
+		dest="schema_id_path",
+		help="When the content read from the file is going to be validated, JSON Path (accepted by jsonpath-ng) used to get the schema id which identifies the schema to be used by the validator",
+		default=ExtensibleValidator.DEFAULT_SCHEMA_KEY_JP,
+	)
+	ap.add_argument(
+		"--guess-schema",
+		dest="guess_unmatched",
+		action="store_true",
+		help="Only show engine warnings and errors",
+		default=False,
 	)
 	ap.add_argument(
 		"--fix",
@@ -278,10 +292,9 @@ def main() -> None:
 			)
 
 			# Removing annoying instances
-			if "customFormatInstances" in rep:
-				del rep["customFormatInstances"]
-			if "validator" in rep:
-				del rep["validator"]
+			for annoying_key in ("customFormatInstances", "validator", "ref_resolver"):
+				if annoying_key in rep:
+					del rep[annoying_key]
 
 			if len(rep["errors"]) > 0:
 				exitCode = 3
@@ -341,7 +354,12 @@ def main() -> None:
 				report = copy.copy(schema_report)
 				filenames = [fixReportFilename]
 
-				reportIter = ev.jsonValidateIter(*jsonFiles, verbose=isVerbose)
+				reportIter = ev.jsonValidateIter(
+					*jsonFiles,
+					verbose=isVerbose,
+					schema_key_expr=args.schema_id_path,
+					guess_unmatched=args.guess_unmatched,
+				)
 
 				for rep in reportIter:
 					if len(rep["errors"]) > 0:
@@ -386,7 +404,12 @@ def main() -> None:
 			if tempReportFile is not None:
 				os.unlink(fixReportFilename)
 		else:
-			reportIter = ev.jsonValidateIter(*jsonFiles, verbose=isVerbose)
+			reportIter = ev.jsonValidateIter(
+				*jsonFiles,
+				verbose=isVerbose,
+				schema_key_expr=args.schema_id_path,
+				guess_unmatched=args.guess_unmatched,
+			)
 			for rep in reportIter:
 				if len(rep["errors"]) > 0:
 					exitCode = 2

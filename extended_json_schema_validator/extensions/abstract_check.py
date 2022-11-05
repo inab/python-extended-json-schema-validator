@@ -59,6 +59,7 @@ if TYPE_CHECKING:
 		ref_resolver: JSV.RefResolver
 		resolved_schema: Any
 		id_key: str
+		uri: str
 
 	KeyRefs = MutableMapping[str, MutableSequence[FeatureLoc]]
 	Id2ElemId = MutableMapping[int, MutableMapping[str, MutableSequence[Any]]]
