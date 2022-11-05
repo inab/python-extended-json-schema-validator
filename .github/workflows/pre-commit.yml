@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [ "3.7", "3.8", "3.9", "3.10" ]
+        python-version: [ "3.6", "3.7", "3.8", "3.9", "3.10" ]
     name: Pre-commit python ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v3
@@ -40,48 +40,11 @@ jobs:
           path: .mypy_cache/${{ matrix.python-version }}
           key: mypy-${{ matrix.python-version }}
       - uses: pre-commit/action@v3.0.0
+        if: ${{ matrix.python-version != "3.6" }}
         with:
           extra_args: --all -c .pre-commit-config-gh.yaml
-      - uses: actions/upload-artifact@v3
-        with:
-          retention-days: 2
-          path: constraints-${{ matrix.python-version }}.txt
-          
-  pre-commit_3-6:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [ "3.6" ]
-    name: Pre-commit python ${{ matrix.python-version }}
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-          architecture: x64
-      - run: pip install wheel
-#               pip install -r requirements.txt -r requirements-additional-${{ matrix.python-version }}.txt
-      - run: |
-          pip install -r requirements.txt
-          pip freeze > constraints-${{ matrix.python-version }}.txt
-      - name: Check transitive dependencies licences
-        id: license_check_report
-        uses: pilosus/action-pip-license-checker@v0.6.2
-        with:
-          requirements: constraints-${{ matrix.python-version }}.txt
-          fail: 'StrongCopyleft'
-          exclude: 'pylint.*'
-      - name: Print licences report
-        if: ${{ always() }}
-        run: echo "${{ steps.license_check_report.outputs.report }}"
-      - run: pip install -r dev-requirements.txt -r mypy-requirements.txt
-      - name: MyPy cache
-        uses: actions/cache@v3
-        with:
-          path: .mypy_cache/${{ matrix.python-version }}
-          key: mypy-${{ matrix.python-version }}
       - uses: pre-commit/action@v3.0.0
+        if: ${{ matrix.python-version == "3.6" }}
         with:
           extra_args: --all -c .pre-commit-config-gh-${{ matrix.python-version }}.yaml
       - uses: actions/upload-artifact@v3
@@ -89,22 +52,29 @@ jobs:
           retention-days: 2
           path: constraints-${{ matrix.python-version }}.txt
   
-  push_constraints:
+  pull_request_changes:
     runs-on: ubuntu-latest
-    name: Store newly generated constraints
+    name: Pull request with the newly generated contents
     needs:
       - pre-commit
-      - pre-commit_3-6
     steps:
       - uses: actions/checkout@v3
       - uses: actions/download-artifact@v3
         with:
-          path: constraints-dir
+          path: changes-dir
       - name: Move artifacts to their right place
-        run: mv constraints-dir/artifact/* .
-      - uses: EndBug/add-and-commit@v9
+        run: |
+          cp -dpr changes-dir/artifact/* .
+          rm -r changes-dir/artifact
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v4
         with:
-          add: constraints-*.txt
-          message: Automatically commit changed constraints
-          default_author: github_actions
+          delete-branch: true
+          commit-message: "[create-pull-request] Automatically commit updated contents (constraints)"
+      - name: Check outputs
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
     
