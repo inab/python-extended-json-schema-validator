@@ -115,7 +115,12 @@ class PrimaryKey(UniqueKey):
 						try:
 							with urlopen(r) as f:
 								if f.getcode() == 200:
-									gotIds = str(f.read(), "utf-8").split("\n")
+									gotIds = list(
+										filter(
+											lambda l: l != "",
+											str(f.read(), "utf-8").split("\n"),
+										)
+									)
 									if gotIds:
 										self.gotIdsSet[compURL] = gotIds
 										self.doPopulate = True
