@@ -46,6 +46,8 @@ if TYPE_CHECKING:
 
 	from typing_extensions import Protocol, TypedDict, runtime_checkable
 
+	from jsonschema.exceptions import ValidationError
+
 	from .extend_validator_helpers import (
 		CustomTypeCheckerCallable,
 		RefSchemaListSet,
@@ -1138,7 +1140,7 @@ class ExtensibleValidator(object):
 					jsonPossibles[iJsonPossible] = None
 					numFilePass1Ignore += 1
 			elif guess_unmatched:
-				all_errors: "MutableSequence[str]" = []
+				all_errors: "MutableSequence[ValidationError]" = []
 
 				# Brute force testing all the schemas
 				for schemaObj in p_schemaHash.values():
@@ -1200,18 +1202,18 @@ class ExtensibleValidator(object):
 					numFilePass1OK += 1
 				else:
 					self.logger.error(
-						"\t- ERRORS:\n"
+						f"\t- CUMULATE ({len(p_schemaHash)} schemas) ERRORS:\n"
 						+ "\n".join(
 							map(
 								lambda se: "\t\tPath: {0} . Message: {1}".format(
 									"/" + "/".join(map(lambda e: str(e), se.path)),
 									se.message,
 								),
-								valErrors,
+								all_errors,
 							)
 						)
 					)
-					for valError in valErrors:
+					for valError in all_errors:
 						if isinstance(valError.validator_value, dict):
 							schema_error_reason = valError.validator_value.get(
 								"reason", "schema_error"
