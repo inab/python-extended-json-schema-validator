@@ -512,7 +512,7 @@ digraph schemas {{
 
 			headerName = jsonSchemaURI
 			rSlash = headerName.rfind("/")
-			if rSlash != -1:
+			if rSlash != -1 and len(headerName[rSlash + 1 :]) > 0:
 				headerName = headerName[rSlash + 1 :]
 
 			label = genObjectNodes(
