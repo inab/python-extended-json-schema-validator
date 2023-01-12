@@ -8,7 +8,7 @@ jsonpath-ng==1.5.3
 jsonpointer==2.3
 jsonschema==4.17.3
 ply==3.11
-pyrsistent==0.19.2
+pyrsistent==0.19.3
 python-dateutil==2.8.2
 pyxdg==0.28
 PyYAML==6.0
@@ -16,5 +16,5 @@ rfc3339-validator==0.1.4
 rfc3986-validator==0.1.1
 six==1.16.0
 uri-template==1.2.0
-uritools==4.0.0
+uritools==4.0.1
 webcolors==1.12
