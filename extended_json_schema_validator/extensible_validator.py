@@ -824,8 +824,8 @@ class ExtensibleValidator(object):
 		"""
 		p_schemaHash = self.schemaHash
 
-		if verbose:
-			logLevel = logging.INFO
+		if verbose is not None:
+			logLevel = logging.WARNING if verbose else logging.INFO
 		else:
 			logLevel = logging.DEBUG
 
@@ -1108,6 +1108,7 @@ class ExtensibleValidator(object):
 										errPath, valError.message
 									),
 									"path": errPath,
+									"schema_id": jsonSchemaIdVal,
 								}
 							)
 
@@ -1186,6 +1187,10 @@ class ExtensibleValidator(object):
 						all_errors = []
 						break
 
+					# Label the errors with the schema_id
+					# so errors are contextualized
+					for this_error in these_errors:
+						this_error.schema_id = jsonSchemaIdVal
 					all_errors.extend(these_errors)
 
 					self.logger.debug(
@@ -1205,9 +1210,10 @@ class ExtensibleValidator(object):
 						f"\t- CUMULATE ({len(p_schemaHash)} schemas) ERRORS:\n"
 						+ "\n".join(
 							map(
-								lambda se: "\t\tPath: {0} . Message: {1}".format(
+								lambda se: "\t\tSchema: {2} Path: {0} . Message: {1}".format(
 									"/" + "/".join(map(lambda e: str(e), se.path)),
 									se.message,
+									se.schema_id,  # type: ignore[attr-defined]
 								),
 								all_errors,
 							)
@@ -1228,6 +1234,7 @@ class ExtensibleValidator(object):
 								"description": "Path: {0} . Message: {1}".format(
 									errPath, valError.message
 								),
+								"schema_id": valError.schema_id,
 								"path": errPath,
 							}
 						)

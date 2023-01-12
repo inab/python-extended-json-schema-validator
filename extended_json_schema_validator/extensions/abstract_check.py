@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 		reason: str
 		description: str
 		path: str
+		schema_id: str
 
 	class SecondPassErrorDict(BootstrapErrorDict):
 		file: str
