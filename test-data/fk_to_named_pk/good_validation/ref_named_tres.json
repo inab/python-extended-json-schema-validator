@@ -1,0 +1,7 @@
+{
+	"@schema": "fk_to_named_pk/1.0",
+	"something": {
+		"ref_local_id": "tres",
+		"ref_other_id": "treinta"
+	}
+}

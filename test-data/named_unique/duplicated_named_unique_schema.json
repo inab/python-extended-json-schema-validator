@@ -1,0 +1,40 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "named_unique_example/1.0",
+    "title": "Unique implementation example",
+    "type": "object",
+    "properties": {
+        "@schema": {
+            "description": "The JSON schema id",
+            "type": "string",
+            "const": "named_unique_example/1.0"
+        },
+        "local_id": {
+            "description": "Submitter-local identifier (within investigation/hub) for experiment (in curie-format, if applicable)",
+            "type": "string",
+            "unique": {
+                "name": "local_id",
+                "members": true
+            }
+        },
+        "other_id": {
+            "description": "Another unique id",
+            "type": "string",
+            "unique": {
+                "name": "other_id",
+                "members": true
+            }
+        }
+    },
+    "required": [
+        "local_id"
+    ],
+    "unique": {
+        "name": "other_id",
+        "members": [
+            "local_id",
+            "other_id"
+        ]
+    },
+    "additionalProperties": false
+}

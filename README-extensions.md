@@ -7,12 +7,24 @@ The extensions implemented are focused on features which involve more than one J
   + If `unique` is a _`true`_ JSON value, the whole value in that position is used for the uniqueness check.
   
   + If `unique` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated.
+  
+  + If `unique` is an object:
+  
+    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings.
+    
+    + It could have `name` key, which gives a labelling name.
 
 * __Primary key values check__: When the `primary_key` attribute is declared, the values assigned in that part of the schema on a set of JSON contents must be unique, and can be referenced by _foreign keys_. The check includes all the loaded JSON contents. Its behaviour is similar to `unique` extension (there are several examples inside [test-data](test-data)):
 
   + If `primary_key` is a _`true`_ JSON value, the whole value in that position is used for the uniqueness check.
   
   + If `primary_key` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated.
+  
+  + If `primary_key` is an object:
+  
+    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings.
+    
+    + It could have `name` key, which gives a referencing name. This is useful for complex documents where several parts define their own primary keys, so foreign keys scope can be narrowed to an specific primary key.
   
   + You can even pre-populate the list of primary key values from an external source just telling it in the YAML configuration file. It should have something like:
     
@@ -34,5 +46,7 @@ primary_key:
   + `schema_id`: This is the relative or absolute IRI of the JSON Schema describing the primary key.
   
   + `members`: This is an array of strings. Those strings are the names of the keys whose values form the tuple to be validated against the gathered primary key values.
+  
+  + `refers_to`: This optional key is used to tell which is the named primary key to be focused on. This is useful for complex JSON Schemas where a schema has more than one primary key declaration.
 
 

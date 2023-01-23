@@ -1,0 +1,9 @@
+{
+	"@schema": "named_pk_example/1.0",
+	"other_id": "cincuenta",
+	"local_id": "uno",
+	"ejemplo": {
+		"other_id_2": "50",
+		"local_id_2": "1"
+	}
+}

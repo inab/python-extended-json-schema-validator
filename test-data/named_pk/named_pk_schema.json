@@ -1,13 +1,13 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "$id": "compound_pk_example/1.0",
+    "$id": "named_pk_example/1.0",
     "title": "Primary key implementation example",
     "type": "object",
     "properties": {
         "@schema": {
             "description": "The JSON schema id",
             "type": "string",
-            "const": "compound_pk_example/1.0"
+            "const": "named_pk_example/1.0"
         },
         "local_id": {
             "description": "Submitter-local identifier (within investigation/hub) for experiment (in curie-format, if applicable)",
@@ -29,12 +29,20 @@
 					"type": "string"
 				}
 			},
-			"primary_key": [ "local_id_2", "other_id_2" ]
+			"additionalProperties": false,
+			"primary_key": {
+				"members": [ "local_id_2", "other_id_2" ],
+				"name": "2pk"
+			}
 		}
     },
-    "primary_key": [ "local_id", "other_id" ],
+    "primary_key": {
+	"members": [ "local_id", "other_id" ],
+	"name": "pk"
+    },
     "required": [
-        "local_id"
+        "local_id",
+	"ejemplo"
     ],
     "additionalProperties": false
 }
