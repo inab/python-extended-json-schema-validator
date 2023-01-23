@@ -9,7 +9,7 @@ from .abstract_check import AbstractCustomFeatureValidator
 
 # We need this for its class methods
 from .pk_check import PrimaryKey
-from .unique_check import ALLOWED_ATOMIC_VALUE_TYPES
+from .unique_check import ALLOWED_ATOMIC_VALUE_TYPES, UniqueContext
 
 if TYPE_CHECKING:
 	from typing import (
@@ -38,6 +38,11 @@ if TYPE_CHECKING:
 		SecondPassErrorDict,
 	)
 
+	from .unique_check import (
+		UniqueDef,
+		UniqueValues,
+	)
+
 
 class FKVal(NamedTuple):
 	value: "Union[str, int, float, bool]"
@@ -54,6 +59,13 @@ class FKLoc(NamedTuple):
 class FKDef(NamedTuple):
 	fkLoc: FKLoc
 	members: "Sequence[str]"
+	refers_to: "Optional[str]"
+
+
+class PKKeys(NamedTuple):
+	schemaURI: str
+	vals: "MutableSequence[UniqueValues]" = []
+	by_name: "MutableMapping[str, UniqueDef]" = {}
 
 
 class ForeignKey(AbstractCustomFeatureValidator):
@@ -94,6 +106,11 @@ class ForeignKey(AbstractCustomFeatureValidator):
 							"uniqueItems": True,
 							"minItems": 1,
 							"items": {"type": "string", "minLength": 1},
+						},
+						"refers_to": {
+							"title": "The specific key name being referred. If unset, it refers any primary key",
+							"type": "string",
+							"minLength": 1,
 						},
 						"on_delete_hint": {
 							"type": "string",
@@ -152,6 +169,7 @@ class ForeignKey(AbstractCustomFeatureValidator):
 					)
 
 				fk_members = p_FK_decl.get("members", [])
+				fk_pk_name = p_FK_decl.get("refers_to")
 				fkLoc = FKLoc(
 					schemaURI=self.schemaURI,
 					refSchemaURI=abs_ref_schema_id,
@@ -162,7 +180,9 @@ class ForeignKey(AbstractCustomFeatureValidator):
 				fkDefH = self.FKWorld.setdefault(fk_id, {})
 
 				# This control is here for same primary key referenced from multiple cases
-				fkDefH[fk_loc_id] = FKDef(fkLoc=fkLoc, members=fk_members)
+				fkDefH[fk_loc_id] = FKDef(
+					fkLoc=fkLoc, members=fk_members, refers_to=fk_pk_name
+				)
 
 		return errors
 
@@ -188,9 +208,30 @@ class ForeignKey(AbstractCustomFeatureValidator):
 				else:
 					abs_ref_schema_id = ref_schema_id
 
-				fk_members = p_FK_decl.get("members", [])
-				if isinstance(fk_members, list):
-					obtainedValues = PrimaryKey.GetKeyValues(value, fk_members)
+				# Group the values to be checked
+				# fk_id = id(p_FK_decl)  # id(schema)
+				fk_id = abs_ref_schema_id
+
+				# The common dictionary for this declaration where all the FK values are kept
+				fkDefs = self.FKWorld.setdefault(fk_id, {})
+				fkDef = fkDefs.get(fk_loc_id)
+				if fkDef is None:
+					fk_members = p_FK_decl.get("members", [])
+					fk_pk_name = p_FK_decl.get("refers_to")
+					fkDef = FKDef(
+						fkLoc=FKLoc(
+							schemaURI=self.schemaURI,
+							refSchemaURI=abs_ref_schema_id,
+							path="(unknown {})".format(fk_loc_id),
+							values=list(),
+						),
+						members=fk_members,
+						refers_to=fk_pk_name,
+					)
+					fkDefs[fk_loc_id] = fkDef
+
+				if isinstance(fkDef.members, list):
+					obtainedValues = PrimaryKey.GetKeyValues(value, fkDef.members)
 				else:
 					obtainedValues = ([value],)
 
@@ -206,24 +247,6 @@ class ForeignKey(AbstractCustomFeatureValidator):
 				else:
 					theValues = PrimaryKey.GenKeyStrings(obtainedValues)
 
-				# Group the values to be checked
-				# fk_id = id(p_FK_decl)  # id(schema)
-				fk_id = abs_ref_schema_id
-
-				# The common dictionary for this declaration where all the FK values are kept
-				fkDef = self.FKWorld.setdefault(fk_id, {}).setdefault(
-					fk_loc_id,
-					FKDef(
-						fkLoc=FKLoc(
-							schemaURI=self.schemaURI,
-							refSchemaURI=abs_ref_schema_id,
-							path="(unknown {})".format(fk_loc_id),
-							values=list(),
-						),
-						members=fk_members,
-					),
-				)
-
 				fkLoc = fkDef.fkLoc
 
 				fkVals = fkLoc.values
@@ -238,32 +261,94 @@ class ForeignKey(AbstractCustomFeatureValidator):
 	) -> "Tuple[Set[str], Set[str], Sequence[SecondPassErrorDict]]":
 		errors: "MutableSequence[SecondPassErrorDict]" = []
 
-		pkContextsHash: "MutableMapping[str, MutableSequence[MutableMapping[str, str]]]" = (
-			{}
-		)
+		# First level: by schema id
+		# second level: PKKeys tuple with three components
+		# - schema URI (str)
+		# - MutableSequence of UniqueValues
+		# - MutableMapping by key name of UniqueDef
+		pkContextsHash: "MutableMapping[str, PKKeys]" = {}
 		for className, pkContexts in l_customFeatureValidatorsContext.items():
 			# This instance is only interested in primary keys
 			if className == PrimaryKey.__name__:
 				for pkContext in pkContexts:
 					# Getting the path correspondence
-					for pkDef in pkContext.context.values():
+					assert isinstance(pkContext.context, UniqueContext)
+					for pkDef in pkContext.context.unique_world.values():
 						pkLoc = pkDef.uniqueLoc
 						# As there can be nested keys from other schemas
 						# ignore the schemaURI from the context, and use
 						# the one in the unique location
+						pkKeys = pkContextsHash.get(pkLoc.schemaURI)
 						if len(pkDef.values) > 0:
-							pkVals = pkContextsHash.setdefault(pkLoc.schemaURI, [])
-							pkVals.append(pkDef.values)
+							if pkKeys is None:
+								pkKeys = PKKeys(
+									schemaURI=pkLoc.schemaURI,
+								)
+								pkContextsHash[pkLoc.schemaURI] = pkKeys
+							pkKeys.vals.append(pkDef.values)
+
+						if pkKeys is not None:
+							if pkDef.name in pkKeys.by_name:
+								self.logger.debug(
+									f"Repeated primary key '{pkDef.name}'. Be prepared for foreign key hairy responses."
+								)
+							else:
+								pkKeys.by_name[pkDef.name] = pkDef
+						else:
+							self.logger.debug(f"Unhandled PK to {pkLoc.schemaURI}")
 
 		# Now, at last, check!!!!!!!
 		uniqueWhere: "MutableSet[str]" = set()
 		uniqueFailedWhere: "MutableSet[str]" = set()
+		# For each registered set of foreign key definitions in this JSON Schema,
+		# clustered by referenced schema URI
 		for refSchemaURI, fkDefH in self.FKWorld.items():
-			for fk_loc_id, fkDef in fkDefH.items():
-				fkLoc = fkDef.fkLoc
-				fkPath = fkLoc.path
-				checkValuesList = pkContextsHash.get(refSchemaURI)
-				if checkValuesList is not None:
+			# Get the dictionary of keys which can be checked
+			# from the referenced schema URI
+			checkValuesKeys = pkContextsHash.get(refSchemaURI)
+			if checkValuesKeys is not None:
+				# For each registered foreign key of the JSON Schema
+				# referring the schema URI with the primary key
+				for fk_loc_id, fkDef in fkDefH.items():
+					# Get the details of the foreign key
+					fkLoc = fkDef.fkLoc
+					fkPath = fkLoc.path
+
+					# Select the source of validation
+					# It could be a named public key
+					checkValuesList: "Sequence[UniqueValues]"
+					if fkDef.refers_to is not None:
+						uDef = checkValuesKeys.by_name.get(fkDef.refers_to)
+						# If the named key is not found, fail
+						if uDef is None:
+							for fkVal in fkLoc.values:
+								uniqueWhere.add(fkVal.where)
+								uniqueFailedWhere.add(fkVal.where)
+								errors.append(
+									{
+										"reason": "stale_fk",
+										"description": "Unmatching FK ({0}) in {1} to schema {2} (key {3} not found)".format(
+											fkVal.value,
+											fkVal.where,
+											refSchemaURI,
+											fkDef.refers_to,
+										),
+										"file": fkVal.where,
+										"path": fkPath,
+									}
+								)
+							continue
+
+						# As it was found, go ahead
+						checkValuesList = [uDef.values]
+					else:
+						# When the key has no name,
+						# or it is not targetted
+						# then check against all
+						# the keys in the context
+						checkValuesList = checkValuesKeys.vals
+
+					# Now, checktime!!!!
 					for fkVal in fkLoc.values:
 						uniqueWhere.add(fkVal.where)
 
@@ -279,14 +364,26 @@ class ForeignKey(AbstractCustomFeatureValidator):
 							errors.append(
 								{
 									"reason": "stale_fk",
-									"description": "Unmatching FK ({0}) in {1} to schema {2}".format(
-										fkString, fkVal.where, refSchemaURI
+									"description": "Unmatching FK ({0}) in {1} to schema {2} (key {3})".format(
+										fkString,
+										fkVal.where,
+										refSchemaURI,
+										fkDef.refers_to,
 									),
 									"file": fkVal.where,
 									"path": fkPath,
 								}
 							)
-				else:
+			else:
+				# For each registered foreign key of the JSON Schema
+				# referring the schema URI with the primary key
+				for fk_loc_id, fkDef in fkDefH.items():
+					# Get the details of the foreign key
+					fkLoc = fkDef.fkLoc
+					fkPath = fkLoc.path
+					# To report there is no way to
+					# check because there is no document
+					# available
 					for fkVal in fkLoc.values:
 						uniqueWhere.add(fkVal.where)
 						uniqueFailedWhere.add(fkVal.where)

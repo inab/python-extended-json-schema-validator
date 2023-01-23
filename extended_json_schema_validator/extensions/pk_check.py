@@ -15,6 +15,7 @@ from .unique_check import (
 	UniqueDef,
 	UniqueKey,
 	UniqueLoc,
+	UniqueContext,
 )
 
 if TYPE_CHECKING:
@@ -56,11 +57,16 @@ class PrimaryKey(UniqueKey):
 		self.doPopulate = False
 		self.gotIdsSet: "Optional[MutableMapping[str, Sequence[str]]]" = None
 		self.warmedUp = False
-		self.PopulatedPKWorld: "MutableMapping[int, Any]" = dict()
+		self.PopulatedPKWorld: "MutableMapping[int, UniqueDef]" = dict()
+		self.PopulatedPKWorldByName: "MutableMapping[str, UniqueDef]" = dict()
 
 	@property
 	def triggerAttribute(self) -> str:
 		return self.KeyAttributeNamePK
+
+	@property
+	def randomKeyPrefix(self) -> str:
+		return "pk"
 
 	@property
 	def triggerJSONSchemaDef(self) -> "Mapping[str, Any]":
@@ -72,6 +78,30 @@ class PrimaryKey(UniqueKey):
 						"type": "array",
 						"items": {"type": "string", "minLength": 1},
 						"uniqueItems": True,
+						"minItems": 1,
+					},
+					{
+						"type": "object",
+						"properties": {
+							"members": {
+								"oneOf": [
+									{"type": "boolean"},
+									{
+										"type": "array",
+										"items": {"type": "string", "minLength": 1},
+										"uniqueItems": True,
+										"minItems": 1,
+									},
+								]
+							},
+							"name": {
+								"type": "string",
+								"minLength": 1,
+							},
+						},
+						"required": [
+							"members",
+						],
 					},
 				]
 			}
@@ -143,7 +173,10 @@ class PrimaryKey(UniqueKey):
 							)
 
 	def doDefaultPopulation(
-		self, unique_id: int = -1, unique_state: "Union[bool, Sequence[str]]" = []
+		self,
+		unique_id: int = -1,
+		unique_members: "Union[bool, Sequence[str]]" = [],
+		unique_name: "Optional[str]" = None,
 	) -> None:
 		if self.doPopulate:
 			# Deactivate future populations
@@ -156,17 +189,34 @@ class PrimaryKey(UniqueKey):
 				).get("allow_provider_duplicates", False)
 				if allow_provider_duplicates:
 					UniqueWorld = self.PopulatedPKWorld
+					UniqueWorldByName = self.PopulatedPKWorldByName
 				else:
 					UniqueWorld = self.UniqueWorld
+					UniqueWorldByName = self.UniqueWorldByName
 
-				uniqueDef = UniqueWorld.setdefault(
-					unique_id,
-					UniqueDef(
-						uniqueLoc=UniqueLoc(schemaURI=self.schemaURI, path="(unknown)"),
-						members=unique_state,
-						values=dict(),
-					),
-				)
+				uniqueDef = UniqueWorld.get(unique_id)
+				if uniqueDef is None:
+					# Assigning a random name
+					if unique_name is None:
+						unique_name = f"{self.randomKeyPrefix}_{unique_id}"
+					uniqueDef = UniqueWorld.setdefault(
+						unique_id,
+						UniqueDef(
+							uniqueLoc=UniqueLoc(
+								schemaURI=self.schemaURI, path="(unknown)"
+							),
+							members=unique_members,
+							name=unique_name,
+							values=dict(),
+						),
+					)
+					UniqueWorld[unique_id] = uniqueDef
+					if unique_name in UniqueWorldByName:
+						self.logger.warning(
+							f"Repeated named {self.randomKeyPrefix} '{unique_name}'. Be prepared for hairy responses."
+						)
+					else:
+						UniqueWorldByName[unique_name] = uniqueDef
 				uniqueSet = uniqueDef.values
 
 				# Should it complain about this?
@@ -174,8 +224,12 @@ class PrimaryKey(UniqueKey):
 					for theValue in gotIds:
 						if theValue in uniqueSet:
 							raise ValidationError(
-								"Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(
-									self.triggerAttribute, theValue, uniqueSet[theValue]
+								"Duplicated {0} value for PK {1} -=> {2} <=-  (got from {3}, appeared in {4})".format(
+									self.triggerAttribute,
+									uniqueDef.name,
+									theValue,
+									uniqueDef.members,
+									uniqueSet[theValue],
 								),
 								validator_value={"reason": self._errorReason},
 							)
@@ -196,13 +250,37 @@ class PrimaryKey(UniqueKey):
 			# Needed to populate the cache of ids
 			# and the unicity check
 			unique_id = id(schema)
+			uniqueDef = self.UniqueWorld.get(unique_id)
+			if uniqueDef is None:
+				if isinstance(unique_state, dict):
+					unique_members = unique_state["members"]
+					unique_name = unique_state.get("name")
+				else:
+					unique_members = unique_state
+					unique_name = None
+				# Assigning a random name
+				if unique_name is None:
+					unique_name = f"{self.randomKeyPrefix}_{unique_id}"
+
+				uniqueDef = self.UniqueWorld.setdefault(
+					unique_id,
+					UniqueDef(
+						uniqueLoc=UniqueLoc(schemaURI=self.schemaURI, path="(unknown)"),
+						members=unique_members,
+						name=unique_name,
+						values=dict(),
+					),
+				)
+				self.UniqueWorld[unique_id] = uniqueDef
+
 			self.doDefaultPopulation(
 				unique_id=unique_id,
-				unique_state=cast("Union[bool, Sequence[str]]", unique_state),
+				unique_members=uniqueDef.members,
+				unique_name=uniqueDef.name,
 			)
 
-			if isinstance(unique_state, list):
-				obtainedValues = self.GetKeyValues(value, unique_state)
+			if isinstance(uniqueDef.members, list):
+				obtainedValues = self.GetKeyValues(value, uniqueDef.members)
 			else:
 				obtainedValues = ([value],)
 
@@ -219,22 +297,18 @@ class PrimaryKey(UniqueKey):
 				theValues = self.GenKeyStrings(obtainedValues)
 
 			# The common dictionary for this declaration where all the unique values are kept
-			uniqueDef = self.UniqueWorld.setdefault(
-				unique_id,
-				UniqueDef(
-					uniqueLoc=UniqueLoc(schemaURI=self.schemaURI, path="(unknown)"),
-					members=unique_state,
-					values=dict(),
-				),
-			)
 			uniqueSet = uniqueDef.values
 
 			# Should it complain about this?
 			for theValue in theValues:
 				if theValue in uniqueSet:
 					yield ValidationError(
-						"Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(
-							self.triggerAttribute, theValue, uniqueSet[theValue]
+						"Duplicated {0} value for PK {1} -=> {2} <=-  (got from {3}, appeared in {4})".format(
+							self.triggerAttribute,
+							uniqueDef.name,
+							theValue,
+							uniqueDef.members,
+							uniqueSet[theValue],
 						),
 						validator_value={"reason": self._errorReason},
 					)
@@ -248,24 +322,33 @@ class PrimaryKey(UniqueKey):
 
 		if len(self.PopulatedPKWorld) > 0:
 			ConsolidatedUniqueWorld = copy.copy(self.PopulatedPKWorld)
+			ConsolidatedUniqueWorldByName = copy.copy(self.PopulatedPKWorldByName)
 
 			for unique_id, uniqueDef in self.UniqueWorld.items():
 				baseUniqueDef = ConsolidatedUniqueWorld.get(unique_id)
 				if baseUniqueDef is None:
-					ConsolidatedUniqueWorld[unique_id] = uniqueDef
+					newUniqueDef = uniqueDef
 				else:
-					newUniqueSet = baseUniqueDef.values.copy()
+					newUniqueSet = copy.copy(baseUniqueDef.values)
 					newUniqueSet.update(uniqueDef.values)
 					newUniqueDef = UniqueDef(
 						uniqueLoc=baseUniqueDef.uniqueLoc,
 						members=baseUniqueDef.members,
+						name=baseUniqueDef.name,
 						values=newUniqueSet,
 					)
-					ConsolidatedUniqueWorld[unique_id] = newUniqueDef
+				ConsolidatedUniqueWorld[unique_id] = newUniqueDef
+				ConsolidatedUniqueWorldByName[uniqueDef.name] = newUniqueDef
 		else:
 			ConsolidatedUniqueWorld = self.UniqueWorld
+			ConsolidatedUniqueWorldByName = self.UniqueWorldByName
 
-		return CheckContext(schemaURI=self.schemaURI, context=ConsolidatedUniqueWorld)
+		return CheckContext(
+			schemaURI=self.schemaURI,
+			context=UniqueContext(
+				ConsolidatedUniqueWorld, ConsolidatedUniqueWorldByName
+			),
+		)
 
 	def invalidateCaches(self) -> None:
 		self.warmedUp = False

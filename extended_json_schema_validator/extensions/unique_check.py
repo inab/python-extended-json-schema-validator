@@ -35,6 +35,8 @@ if TYPE_CHECKING:
 		RefSchemaTuple,
 	)
 
+	UniqueValues = MutableMapping[Union[str, int, float, bool, None], str]
+
 
 class UniqueLoc(NamedTuple):
 	schemaURI: str
@@ -44,7 +46,13 @@ class UniqueLoc(NamedTuple):
 class UniqueDef(NamedTuple):
 	uniqueLoc: UniqueLoc
 	members: "Union[bool, Sequence[str]]"
-	values: "MutableMapping[str, str]"
+	values: "UniqueValues"
+	name: str
+
+
+class UniqueContext(NamedTuple):
+	unique_world: "MutableMapping[int, UniqueDef]"
+	unique_world_by_name: "MutableMapping[str, UniqueDef]"
 
 
 class UniqueKey(AbstractCustomFeatureValidator):
@@ -60,11 +68,16 @@ class UniqueKey(AbstractCustomFeatureValidator):
 		isRW: bool = True,
 	):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
-		self.UniqueWorld: "MutableMapping[int, Any]" = dict()
+		self.UniqueWorld: "MutableMapping[int, UniqueDef]" = dict()
+		self.UniqueWorldByName: "MutableMapping[str, UniqueDef]" = dict()
 
 	@property
 	def triggerAttribute(self) -> str:
 		return self.KeyAttributeNameUK
+
+	@property
+	def randomKeyPrefix(self) -> str:
+		return "unique"
 
 	@property
 	def triggerJSONSchemaDef(self) -> "Mapping[str, Any]":
@@ -76,6 +89,30 @@ class UniqueKey(AbstractCustomFeatureValidator):
 						"type": "array",
 						"items": {"type": "string", "minLength": 1},
 						"uniqueItems": True,
+						"minItems": 1,
+					},
+					{
+						"type": "object",
+						"properties": {
+							"members": {
+								"oneOf": [
+									{"type": "boolean"},
+									{
+										"type": "array",
+										"items": {"type": "string", "minLength": 1},
+										"uniqueItems": True,
+										"minItems": 1,
+									},
+								]
+							},
+							"name": {
+								"type": "string",
+								"minLength": 1,
+							},
+						},
+						"required": [
+							"members",
+						],
 					},
 				]
 			}
@@ -105,14 +142,33 @@ class UniqueKey(AbstractCustomFeatureValidator):
 
 			# This control is here for multiple inheritance cases
 			if uDef is not None:
-				uDef.uniqueLoc = uLoc
+				uDef = uDef._replace(uniqueLoc=uLoc)
+				self.UniqueWorld[uId] = uDef
+				self.UniqueWorldByName[uDef.name] = uDef
 			else:
+				poss_members = loc.context[self.triggerAttribute]
+				if isinstance(poss_members, dict):
+					unique_members = poss_members["members"]
+					unique_name = poss_members.get("name")
+				else:
+					unique_members = poss_members
+					unique_name = None
+				# Assigning a random name
+				if unique_name is None:
+					unique_name = f"{self.randomKeyPrefix}_{uId}"
 				uDef = UniqueDef(
 					uniqueLoc=uLoc,
-					members=loc.context[self.triggerAttribute],
+					members=unique_members,
+					name=unique_name,
 					values=dict(),
 				)
 				self.UniqueWorld[uId] = uDef
+				if unique_name in self.UniqueWorldByName:
+					self.logger.warning(
+						f"Repeated named {self.randomKeyPrefix} '{unique_name}'. Be prepared for hairy responses."
+					)
+				else:
+					self.UniqueWorldByName[unique_name] = uDef
 
 		return []
 
@@ -231,8 +287,35 @@ class UniqueKey(AbstractCustomFeatureValidator):
 			# Check the unicity
 			unique_id = id(schema)
 
-			if isinstance(unique_state, list):
-				obtainedValues = self.GetKeyValues(value, unique_state)
+			# The common dictionary for this declaration where all the unique values are kept
+			uniqueDef = self.UniqueWorld.get(unique_id)
+			if uniqueDef is None:
+				if isinstance(unique_state, dict):
+					unique_members = unique_state["members"]
+					unique_name = unique_state.get("name")
+				else:
+					unique_members = unique_state
+					unique_name = None
+				# Assigning a random name
+				if unique_name is None:
+					unique_name = f"{self.randomKeyPrefix}_{unique_id}"
+
+				uniqueDef = UniqueDef(
+					uniqueLoc=UniqueLoc(schemaURI=self.schemaURI, path="(unknown)"),
+					members=unique_members,
+					name=unique_name,
+					values=dict(),
+				)
+				self.UniqueWorld[unique_id] = uniqueDef
+				if unique_name in self.UniqueWorldByName:
+					self.logger.warning(
+						f"Repeated named {self.randomKeyPrefix} '{unique_name}'. Be prepared for hairy responses."
+					)
+				else:
+					self.UniqueWorldByName[unique_name] = uniqueDef
+
+			if isinstance(uniqueDef.members, list):
+				obtainedValues = self.GetKeyValues(value, uniqueDef.members)
 			else:
 				obtainedValues = ([value],)
 
@@ -248,23 +331,17 @@ class UniqueKey(AbstractCustomFeatureValidator):
 			else:
 				theValues = self.GenKeyStrings(obtainedValues)
 
-			# The common dictionary for this declaration where all the unique values are kept
-			uniqueDef = self.UniqueWorld.setdefault(
-				unique_id,
-				UniqueDef(
-					uniqueLoc=UniqueLoc(schemaURI=self.schemaURI, path="(unknown)"),
-					members=unique_state,
-					values=dict(),
-				),
-			)
 			uniqueSet = uniqueDef.values
-
 			# Should it complain about this?
 			for theValue in theValues:
 				if theValue in uniqueSet:
 					yield ValidationError(
-						"Duplicated {0} value -=> {1} <=-  (appeared in {2})".format(
-							self.triggerAttribute, theValue, uniqueSet[theValue]
+						"Duplicated {0} value for UK {1} -=> {2} <=-  (got from {3}, appeared in {4})".format(
+							self.triggerAttribute,
+							uniqueDef.name,
+							theValue,
+							uniqueDef.members,
+							uniqueSet[theValue],
 						),
 						validator_value={"reason": self._errorReason},
 					)
@@ -272,7 +349,10 @@ class UniqueKey(AbstractCustomFeatureValidator):
 					uniqueSet[theValue] = self.currentJSONFile
 
 	def getContext(self) -> "Optional[CheckContext]":
-		return CheckContext(schemaURI=self.schemaURI, context=self.UniqueWorld)
+		return CheckContext(
+			schemaURI=self.schemaURI,
+			context=UniqueContext(self.UniqueWorld, self.UniqueWorldByName),
+		)
 
 	def cleanup(self) -> None:
 		# In order to not destroying the bootstrapping work
