@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import abc
+import inspect
 import logging
 import os
 import shutil
@@ -89,7 +90,11 @@ class AbstractCustomFeatureValidator(abc.ABC):
 		config: "FeatureValidatorConfig" = {},
 		isRW: bool = True,
 	):
-		self.logger = logging.getLogger(self.__class__.__name__)
+		self.logger = logging.getLogger(
+			dict(inspect.getmembers(self))["__module__"]
+			+ "::"
+			+ self.__class__.__name__
+		)
 
 		self.schemaURI = schemaURI
 		self.jsonSchemaSource = jsonSchemaSource
