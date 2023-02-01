@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 	from typing import (
 		Any,
 		MutableMapping,
+		Sequence,
 		Optional,
+		Union,
 	)
 
 # This is needed to assure open suports encoding parameter
@@ -150,12 +152,20 @@ def main() -> None:
 		help="When the content read from the file is going to be validated, JSON Path (accepted by jsonpath-ng) used to get the schema id which identifies the schema to be used by the validator",
 		default=ExtensibleValidator.DEFAULT_SCHEMA_KEY_JP,
 	)
-	ap.add_argument(
+
+	grp_guess = ap.add_mutually_exclusive_group()
+	grp_guess.add_argument(
 		"--guess-schema",
 		dest="guess_unmatched",
 		action="store_true",
-		help="Only show engine warnings and errors",
+		help="Try to validate the input JSONs against all the loaded schemas",
 		default=False,
+	)
+	grp_guess.add_argument(
+		"--use-schemas",
+		dest="use_schemas",
+		help="Try to validate the input JSONs against any of the loaded schemas matching these URIs",
+		nargs="+",
 	)
 	ap.add_argument(
 		"--fix",
@@ -348,6 +358,11 @@ def main() -> None:
 			tempReportFile.close()
 			fixReportFilename = tempReportFile.name
 
+		guess_unmatched: "Union[bool, Sequence[str]]"
+		if args.use_schemas:
+			guess_unmatched = args.use_schemas
+		else:
+			guess_unmatched = args.guess_unmatched
 		if fixReportFilename:
 			while True:
 				loopExitCode = 0
@@ -358,7 +373,7 @@ def main() -> None:
 					*jsonFiles,
 					verbose=isVerbose,
 					schema_key_expr=args.schema_id_path,
-					guess_unmatched=args.guess_unmatched,
+					guess_unmatched=guess_unmatched,
 				)
 
 				for rep in reportIter:
@@ -408,7 +423,7 @@ def main() -> None:
 				*jsonFiles,
 				verbose=isVerbose,
 				schema_key_expr=args.schema_id_path,
-				guess_unmatched=args.guess_unmatched,
+				guess_unmatched=guess_unmatched,
 			)
 			for rep in reportIter:
 				if len(rep["errors"]) > 0:

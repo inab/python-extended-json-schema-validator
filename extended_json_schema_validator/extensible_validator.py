@@ -805,7 +805,7 @@ class ExtensibleValidator(object):
 		*args: "Union[str, ParsedContentEntry]",
 		verbose: "Optional[bool]" = None,
 		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
-		guess_unmatched: "bool" = False,
+		guess_unmatched: "Union[bool, Sequence[str]]" = False,
 	) -> "Iterator[Any]":
 		"""
 		This method validates a given list of JSON contents.
@@ -1146,6 +1146,13 @@ class ExtensibleValidator(object):
 				# Brute force testing all the schemas
 				for schemaObj in p_schemaHash.values():
 					jsonSchemaIdVal = schemaObj["uri"]
+					# When guess_unmatched is a list restricting
+					# the schemas to guess about, skip those
+					# registered schemas which are not among
+					# the given ones
+					if isinstance(guess_unmatched, list):
+						if jsonSchemaIdVal not in guess_unmatched:
+							continue
 					self.logger.log(
 						logLevel, "\t- Using {0} schema".format(jsonSchemaIdVal)
 					)
@@ -1327,7 +1334,7 @@ class ExtensibleValidator(object):
 		*args: "Union[str, ParsedContentEntry]",
 		verbose: "Optional[bool]" = None,
 		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
-		guess_unmatched: "bool" = False,
+		guess_unmatched: "Union[bool, Sequence[str]]" = False,
 	) -> "Sequence[Any]":
 		"""
 		This method validates a given list of JSON contents.
