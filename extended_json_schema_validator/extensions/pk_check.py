@@ -221,24 +221,33 @@ class PrimaryKey(UniqueKey):
 
 				# Should it complain about this?
 				for compURL, gotIds in self.gotIdsSet.items():
+					collision_urls = set()
 					for theValue in gotIds:
 						other_compURL = uniqueSet.get(theValue)
 						# Only complain about collisions
 						# from different pid providers
-						if other_compURL != compURL:
-							raise ValidationError(
-								"Duplicated {0} value from {1} for PK {2} -=> {3} <=-  (got from {4}, appeared in {5})".format(
-									self.triggerAttribute,
-									compURL,
-									uniqueDef.name,
-									theValue,
-									uniqueDef.members,
-									other_compURL,
-								),
-								validator_value={"reason": self._errorReason},
-							)
+						if (other_compURL is not None) and (other_compURL != compURL):
+							if allow_provider_duplicates:
+								collision_urls.add(other_compURL)
+							else:
+								raise ValidationError(
+									"Duplicated {0} value from {1} for PK {2} -=> {3} <=-  (got from {4}, appeared in {5})".format(
+										self.triggerAttribute,
+										compURL,
+										uniqueDef.name,
+										theValue,
+										uniqueDef.members,
+										other_compURL,
+									),
+									validator_value={"reason": self._errorReason},
+								)
 						elif other_compURL is None:
 							uniqueSet[theValue] = compURL
+
+					if len(collision_urls) > 0:
+						self.logger.warning(
+							f"Public keys from {compURL} collided with public keys from {', '.join(collision_urls)}"
+						)
 
 	def validate(
 		self,
