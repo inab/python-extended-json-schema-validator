@@ -133,7 +133,7 @@ def main() -> None:
 		"-C",
 		"--config",
 		dest="configFilename",
-		help="Configuration file (used by extensions)",
+		help="Configuration file (used by extensions) in YAML format",
 	)
 	ap.add_argument(
 		"--cache-dir", dest="cacheDir", help="Caching directory (used by extensions)"
