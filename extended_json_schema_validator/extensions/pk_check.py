@@ -222,18 +222,22 @@ class PrimaryKey(UniqueKey):
 				# Should it complain about this?
 				for compURL, gotIds in self.gotIdsSet.items():
 					for theValue in gotIds:
-						if theValue in uniqueSet:
+						other_compURL = uniqueSet.get(theValue)
+						# Only complain about collisions
+						# from different pid providers
+						if other_compURL != compURL:
 							raise ValidationError(
-								"Duplicated {0} value for PK {1} -=> {2} <=-  (got from {3}, appeared in {4})".format(
+								"Duplicated {0} value from {1} for PK {2} -=> {3} <=-  (got from {4}, appeared in {5})".format(
 									self.triggerAttribute,
+									compURL,
 									uniqueDef.name,
 									theValue,
 									uniqueDef.members,
-									uniqueSet[theValue],
+									other_compURL,
 								),
 								validator_value={"reason": self._errorReason},
 							)
-						else:
+						elif other_compURL is None:
 							uniqueSet[theValue] = compURL
 
 	def validate(
