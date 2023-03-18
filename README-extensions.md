@@ -41,6 +41,18 @@ primary_key:
     
     If you want the keys retrieved from the providers to be used only for foreign key checks, then you have to set up the key `allow_provider_duplicates` to **`true`**. This option is also useful when you want to validate data to be updated in the server, the data is using foreign keys, but you don't want to receive duplicate primary key errors due the entries being validated.
 
+* __Index values check__: When the `index` attribute is declared, the values assigned in that part of the schema on a set of JSON contents can be repeated, and can be referenced by _join keys_. The check includes all the loaded JSON contents. Its behaviour is a very permissive version of `primary_key` extension (there are several examples inside [test-data](test-data)):
+
+  + If `index` is a _`true`_ JSON value, the whole value in that position is recorded.
+  
+  + If `index` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated.
+  
+  + If `index` is an object:
+  
+    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings.
+    
+    + It could have `name` key, which gives a referencing name. This is useful for complex documents where several parts define their own indexes, so join keys scope can be narrowed to an specific index.
+
 * __Foreign key values check__: When the `foreign_keys` attribute is declared, parts of the values in that part of the schema must correlate to the values obtained from a primary key from JSON documents following other JSON Schema. As there can be more than one foreign key, `foreign_keys` expects an array of objects describing each foreign key relation. Those objects must have next keys:
 
   + `schema_id`: This is the relative or absolute IRI of the JSON Schema describing the primary key.
