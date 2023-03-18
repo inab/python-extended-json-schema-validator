@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import abc
+
 from typing import TYPE_CHECKING, NamedTuple, cast
 
 import uritools  # type: ignore[import]
@@ -9,7 +11,11 @@ from .abstract_check import AbstractCustomFeatureValidator
 
 # We need this for its class methods
 from .pk_check import PrimaryKey
-from .unique_check import ALLOWED_ATOMIC_VALUE_TYPES, UniqueContext
+from .index_check import (
+	IndexKey,
+	ALLOWED_ATOMIC_VALUE_TYPES,
+	IndexContext,
+)
 
 if TYPE_CHECKING:
 	from typing import (
@@ -26,6 +32,8 @@ if TYPE_CHECKING:
 		Union,
 	)
 
+	from typing_extensions import Type
+
 	import jsonschema as JSV
 	from jsonschema.exceptions import ValidationError
 	from typing_extensions import Final
@@ -38,9 +46,9 @@ if TYPE_CHECKING:
 		SecondPassErrorDict,
 	)
 
-	from .unique_check import (
-		UniqueDef,
-		UniqueValues,
+	from .index_check import (
+		IndexDef,
+		IndexedValues,
 	)
 
 
@@ -64,34 +72,33 @@ class FKDef(NamedTuple):
 
 class PKKeys(NamedTuple):
 	schemaURI: str
-	vals: "MutableSequence[UniqueValues]" = []
-	by_name: "MutableMapping[str, UniqueDef]" = {}
+	vals: "MutableSequence[IndexedValues]" = []
+	by_name: "MutableMapping[str, IndexDef]" = {}
 
 
-class ForeignKey(AbstractCustomFeatureValidator):
-	KeyAttributeNameFK: "Final[str]" = "foreign_keys"
-	SchemaErrorReasonFK: "Final[str]" = "stale_fk"
-	DanglingFKErrorReason: "Final[str]" = "dangling_fk"
-
+class AbstractRefKey(AbstractCustomFeatureValidator):
 	# Each instance represents the set of keys from one ore more JSON Schemas
 	def __init__(
 		self,
 		schemaURI: str,
+		joinClass: "Type[IndexKey]",
 		jsonSchemaSource: str = "(unknown)",
 		config: "FeatureValidatorConfig" = {},
 		isRW: bool = True,
 	):
-		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
+		super().__init__(
+			schemaURI,
+			jsonSchemaSource=jsonSchemaSource,
+			config=config,
+			isRW=isRW,
+		)
 		self.FKWorld: "MutableMapping[str, MutableMapping[str, FKDef]]" = dict()
-
-	@property
-	def triggerAttribute(self) -> str:
-		return self.KeyAttributeNameFK
+		self.joinClass = joinClass
 
 	@property
 	def triggerJSONSchemaDef(self) -> "Mapping[str, Any]":
 		return {
-			self.KeyAttributeNameFK: {
+			self.triggerAttribute: {
 				"type": "array",
 				"items": {
 					"type": "object",
@@ -125,8 +132,14 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		}
 
 	@property
+	@abc.abstractmethod
 	def _errorReason(self) -> str:
-		return self.SchemaErrorReasonFK
+		pass
+
+	@property
+	@abc.abstractmethod
+	def _danglingErrorReason(self) -> "str":
+		pass
 
 	@property
 	def needsBootstrapping(self) -> bool:
@@ -231,7 +244,7 @@ class ForeignKey(AbstractCustomFeatureValidator):
 					fkDefs[fk_loc_id] = fkDef
 
 				if isinstance(fkDef.members, list):
-					obtainedValues = PrimaryKey.GetKeyValues(value, fkDef.members)
+					obtainedValues = IndexKey.GetKeyValues(value, fkDef.members)
 				else:
 					obtainedValues = ([value],)
 
@@ -245,7 +258,7 @@ class ForeignKey(AbstractCustomFeatureValidator):
 				if isAtomicValue:
 					theValues = (obtainedValues[0][0],)
 				else:
-					theValues = PrimaryKey.GenKeyStrings(obtainedValues)
+					theValues = IndexKey.GenKeyStrings(obtainedValues)
 
 				fkLoc = fkDef.fkLoc
 
@@ -264,17 +277,17 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		# First level: by schema id
 		# second level: PKKeys tuple with three components
 		# - schema URI (str)
-		# - MutableSequence of UniqueValues
-		# - MutableMapping by key name of UniqueDef
+		# - MutableSequence of IndexedValues
+		# - MutableMapping by key name of IndexDef
 		pkContextsHash: "MutableMapping[str, PKKeys]" = {}
 		for className, pkContexts in l_customFeatureValidatorsContext.items():
 			# This instance is only interested in primary keys
-			if className == PrimaryKey.__name__:
+			if className == self.joinClass.__name__:
 				for pkContext in pkContexts:
 					# Getting the path correspondence
-					assert isinstance(pkContext.context, UniqueContext)
-					for pkDef in pkContext.context.unique_world.values():
-						pkLoc = pkDef.uniqueLoc
+					assert isinstance(pkContext.context, IndexContext)
+					for pkDef in pkContext.context.index_world.values():
+						pkLoc = pkDef.indexLoc
 						# As there can be nested keys from other schemas
 						# ignore the schemaURI from the context, and use
 						# the one in the unique location
@@ -316,7 +329,7 @@ class ForeignKey(AbstractCustomFeatureValidator):
 
 					# Select the source of validation
 					# It could be a named public key
-					checkValuesList: "Sequence[UniqueValues]"
+					checkValuesList: "Sequence[IndexedValues]"
 					if fkDef.refers_to is not None:
 						uDef = checkValuesKeys.by_name.get(fkDef.refers_to)
 						# If the named key is not found, fail
@@ -389,7 +402,7 @@ class ForeignKey(AbstractCustomFeatureValidator):
 						uniqueFailedWhere.add(fkVal.where)
 						errors.append(
 							{
-								"reason": self.DanglingFKErrorReason,
+								"reason": self._danglingErrorReason,
 								"description": "No available documents from {0} schema, required by {1}".format(
 									refSchemaURI, self.schemaURI
 								),
@@ -410,3 +423,37 @@ class ForeignKey(AbstractCustomFeatureValidator):
 		for fkDefH in self.FKWorld.values():
 			for fkDef in fkDefH.values():
 				fkDef.fkLoc.values.clear()
+
+
+class ForeignKey(AbstractRefKey):
+	KeyAttributeNameFK: "Final[str]" = "foreign_keys"
+	SchemaErrorReasonFK: "Final[str]" = "stale_fk"
+	DanglingFKErrorReason: "Final[str]" = "dangling_fk"
+
+	# Each instance represents the set of keys from one ore more JSON Schemas
+	def __init__(
+		self,
+		schemaURI: str,
+		jsonSchemaSource: str = "(unknown)",
+		config: "FeatureValidatorConfig" = {},
+		isRW: bool = True,
+	):
+		super().__init__(
+			schemaURI,
+			joinClass=PrimaryKey,
+			jsonSchemaSource=jsonSchemaSource,
+			config=config,
+			isRW=isRW,
+		)
+
+	@property
+	def triggerAttribute(self) -> str:
+		return self.KeyAttributeNameFK
+
+	@property
+	def _errorReason(self) -> str:
+		return self.SchemaErrorReasonFK
+
+	@property
+	def _danglingErrorReason(self) -> "str":
+		return self.DanglingFKErrorReason
