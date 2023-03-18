@@ -3,6 +3,7 @@ attrs==22.2.0
 decorator==5.1.1
 fqdn==1.5.1
 idna==3.4
+ijson==3.2.0.post0
 isoduration==20.11.0
 jsonpath-ng==1.5.3
 jsonpointer==2.3
