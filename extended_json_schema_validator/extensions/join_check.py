@@ -3,8 +3,6 @@
 
 from typing import TYPE_CHECKING
 
-import uritools  # type: ignore[import]
-
 # We need this for its class methods
 from .fk_check import AbstractRefKey
 from .index_check import (

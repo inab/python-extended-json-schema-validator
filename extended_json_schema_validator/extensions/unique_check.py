@@ -3,7 +3,6 @@
 
 from jsonschema.exceptions import ValidationError
 
-from .abstract_check import AbstractCustomFeatureValidator, CheckContext
 from .index_check import (
 	IndexDef,
 	IndexKey,

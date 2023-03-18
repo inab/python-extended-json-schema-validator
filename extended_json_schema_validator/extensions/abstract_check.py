@@ -52,16 +52,16 @@ if TYPE_CHECKING:
 		file: str
 
 	class SchemaHashEntry(TypedDict, total=False):
-		file: str
-		schema: Any
-		schema_hash: str
-		errors: MutableSequence[BootstrapErrorDict]
+		file: "str"
+		schema: "Any"
+		schema_hash: "str"
+		errors: "MutableSequence[BootstrapErrorDict]"
 		customFormatInstances: "Sequence[AbstractCustomFeatureValidator]"
-		validator: Type[JSV.validators._Validator]
-		ref_resolver: JSV.RefResolver
-		resolved_schema: Any
-		id_key: str
-		uri: str
+		validator: "Type[JSV.validators._Validator]"
+		ref_resolver: "JSV.RefResolver"
+		resolved_schema: "Any"
+		id_key: "str"
+		uri: "str"
 
 	KeyRefs = MutableMapping[str, MutableSequence[FeatureLoc]]
 	Id2ElemId = MutableMapping[int, MutableMapping[str, MutableSequence[Any]]]
