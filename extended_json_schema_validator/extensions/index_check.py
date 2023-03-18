@@ -4,8 +4,6 @@
 import json
 import re
 
-from jsonschema.exceptions import ValidationError
-
 from .abstract_check import AbstractCustomFeatureValidator, CheckContext
 
 ALLOWED_KEY_TYPES = (bytes, str)
@@ -28,6 +26,8 @@ if TYPE_CHECKING:
 	)
 
 	import jsonschema as JSV
+	from jsonschema.exceptions import ValidationError
+
 	from typing_extensions import Final
 
 	from .abstract_check import (

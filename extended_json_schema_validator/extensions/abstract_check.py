@@ -51,6 +51,18 @@ if TYPE_CHECKING:
 	class SecondPassErrorDict(BootstrapErrorDict):
 		file: str
 
+	class SchemaHashEntry(TypedDict, total=False):
+		file: str
+		schema: Any
+		schema_hash: str
+		errors: MutableSequence[BootstrapErrorDict]
+		customFormatInstances: "Sequence[AbstractCustomFeatureValidator]"
+		validator: Type[JSV.validators._Validator]
+		ref_resolver: JSV.RefResolver
+		resolved_schema: Any
+		id_key: str
+		uri: str
+
 	KeyRefs = MutableMapping[str, MutableSequence[FeatureLoc]]
 	Id2ElemId = MutableMapping[int, MutableMapping[str, MutableSequence[Any]]]
 	JsonPointer2Val = MutableMapping[str, Any]
@@ -254,18 +266,3 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	# By default, it is a no-op
 	def cleanup(self) -> None:
 		pass
-
-
-if TYPE_CHECKING:
-
-	class SchemaHashEntry(TypedDict, total=False):
-		file: str
-		schema: Any
-		schema_hash: str
-		errors: MutableSequence[BootstrapErrorDict]
-		customFormatInstances: Sequence[AbstractCustomFeatureValidator]
-		validator: Type[JSV.validators._Validator]
-		ref_resolver: JSV.RefResolver
-		resolved_schema: Any
-		id_key: str
-		uri: str
