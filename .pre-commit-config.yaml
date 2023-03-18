@@ -1,22 +1,37 @@
 fail_fast: true
 
 repos:
-  - repo: https://github.com/PyCQA/pylint
-    rev: v2.15.2
-    hooks:
-      - id: pylint
-        args: [ -j, "0", --disable=all, --enable=unused-import]
-
   - repo: local
     hooks:
+      - id: pylint
+        name: Local PyLint
+        language: system
+        require_serial: true
+        types:
+          - python
+        exclude: "^[^/]*env/|dev-[^/]*/"
+        entry: pylint -j 0
       - id: mypy
         name: Local MyPy
         language: system
-        types: [file, python]
+        types:
+          - python
 #        files: \.py$
         exclude: "^[^/]*env/|dev-[^/]*/"
         require_serial: true
-        entry: mypy --strict --show-error-codes
+#        entry: ./basic-installer.bash mypy --strict
+        entry: mypy --strict --show-error-codes --no-warn-unused-ignores
+
+#  - repo: https://github.com/PyCQA/pylint
+#    rev: v2.15.2
+#    hooks:
+#      - id: pylint
+#        args: [ -j, "0", --disable=all, --enable=unused-import]
+
+  - repo: https://github.com/jmfernandez/pre-commit_mirrors-actionlint.git
+    rev: v1.6.23
+    hooks:
+      - id: actionlint
 
   - repo: https://github.com/jmfernandez/pre-commit_mirrors-tan
     rev: v22.8.0
