@@ -1,5 +1,6 @@
 # With 'format-nongpl' several optional formats
 # are supported through additional libraries
+ijson
 jsonschema[format-nongpl] >= 3.0.0
 jsonpath_ng
 uritools

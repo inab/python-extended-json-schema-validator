@@ -234,6 +234,12 @@ def main() -> None:
 		action="store_false",
 	)
 	ap.add_argument(
+		"--iter-arrays",
+		dest="iter_arrays",
+		help="It some of the inputs is an array, shred it and process each element separately",
+		action="store_true",
+	)
+	ap.add_argument(
 		"jsonSchemaDir",
 		metavar="json_schema_or_dir",
 		help="The JSON Schema, either in JSON or YAML file format, or directory with them to validate and use",
@@ -366,40 +372,49 @@ def main() -> None:
 		if fixReportFilename:
 			while True:
 				loopExitCode = 0
-				report = copy.copy(schema_report)
-				filenames = [fixReportFilename]
-
-				reportIter = ev.jsonValidateIter(
-					*jsonFiles,
-					verbose=isVerbose,
-					schema_key_expr=args.schema_id_path,
-					guess_unmatched=guess_unmatched,
-				)
-
-				for rep in reportIter:
-					if len(rep["errors"]) > 0:
-						loopExitCode = 2
-					elif args.doFix or args.isErrorReport:
-						# Skip non-error records
-						continue
-
-					if annotP is not None:
-						for match in annotP.find(rep["json"]):
-							rep["annot"] = match.value
-							break
-					if args.isQuietReport:
-						if "json" in rep:
-							del rep["json"]
-
-					report.append(rep)
-					if args.doFix:
-						filename = rep.get("file")
-						if filename is not None:
-							filenames.append(filename)
-
+				sep = "["
 				logging.info(f"* Storing validation report at {fixReportFilename}")
 				with open(fixReportFilename, mode="w", encoding="utf-8") as repH:
-					json.dump(report, repH, indent=4, sort_keys=True)
+					# First, write the schema report
+					for rep in schema_report:
+						print(sep, file=repH)
+						sep = ","
+						json.dump(rep, repH, indent=4, sort_keys=True)
+
+					filenames = [fixReportFilename]
+
+					reportIter = ev.jsonValidateIter(
+						*jsonFiles,
+						verbose=isVerbose,
+						schema_key_expr=args.schema_id_path,
+						guess_unmatched=guess_unmatched,
+						iterate_over_arrays=args.iter_arrays,
+					)
+
+					for rep in reportIter:
+						if len(rep["errors"]) > 0:
+							loopExitCode = 2
+						elif args.doFix or args.isErrorReport:
+							# Skip non-error records
+							continue
+
+						if annotP is not None:
+							for match in annotP.find(rep["json"]):
+								rep["annot"] = match.value
+								break
+						if args.isQuietReport:
+							if "json" in rep:
+								del rep["json"]
+
+						print(sep, file=repH)
+						sep = ","
+						json.dump(rep, repH, indent=4, sort_keys=True)
+						if args.doFix:
+							filename = rep.get("file")
+							if filename is not None:
+								filenames.append(filename)
+					# Last, close the JSON
+					print("]", file=repH)
 
 				if args.doFix and loopExitCode != 0:
 					editor = os.environ.get("EDITOR", DEFAULT_EDITOR)
@@ -424,6 +439,7 @@ def main() -> None:
 				verbose=isVerbose,
 				schema_key_expr=args.schema_id_path,
 				guess_unmatched=guess_unmatched,
+				iterate_over_arrays=args.iter_arrays,
 			)
 			for rep in reportIter:
 				if len(rep["errors"]) > 0:
@@ -431,9 +447,7 @@ def main() -> None:
 					if not args.doContinue:
 						break
 	elif args.reportFilename is not None:
-		logging.info(
-			"* Storing schema validation report at {}".format(args.reportFilename)
-		)
+		logging.info(f"* Storing schema validation report at {args.reportFilename}")
 		with open(args.reportFilename, mode="w", encoding="utf-8") as repH:
 			json.dump(schema_report, repH, indent=4, sort_keys=True)
 

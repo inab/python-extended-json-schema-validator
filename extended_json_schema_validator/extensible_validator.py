@@ -9,6 +9,7 @@ import logging
 import os
 from typing import NamedTuple, TYPE_CHECKING, cast
 
+import ijson  # type: ignore[import]
 import jsonpath_ng  # type: ignore[import]
 import jsonpath_ng.ext  # type: ignore[import]
 import jsonschema as JSV
@@ -23,6 +24,10 @@ from .extend_validator_helpers import (
 	flattenTraverseListSet,
 	traverseJSONSchema,
 )
+
+from .extensions.join_check import JoinKey
+from .extensions.index_check import IndexKey
+
 from .extensions.fk_check import ForeignKey
 from .extensions.pk_check import PrimaryKey
 
@@ -33,6 +38,7 @@ if TYPE_CHECKING:
 	from typing import (
 		Any,
 		ClassVar,
+		Iterable,
 		Iterator,
 		Mapping,
 		MutableMapping,
@@ -75,12 +81,14 @@ if TYPE_CHECKING:
 		def IsCorrectFormat(cls, value: Any, schema: Optional[Any] = None) -> bool:
 			pass
 
+	ErrorsType = MutableSequence[BootstrapErrorDict]
+
 	class ParsedContentEntry(TypedDict, total=False):
 		file: str
 		json: Any
 		schema_hash: str
 		schema_id: str
-		errors: MutableSequence[BootstrapErrorDict]
+		errors: ErrorsType
 
 
 class LoadedSchemasStats(NamedTuple):
@@ -95,7 +103,7 @@ class LoadedSchemasStats(NamedTuple):
 
 class ExtensibleValidator(object):
 	CustomBaseValidators: "ClassVar[Mapping[Optional[str], Sequence[Type[AbstractCustomFeatureValidator]]]]" = {
-		None: [UniqueKey, PrimaryKey, ForeignKey]
+		None: [IndexKey, UniqueKey, PrimaryKey, JoinKey, ForeignKey]
 	}
 
 	SCHEMA_KEY = "$schema"
@@ -800,12 +808,13 @@ class ExtensibleValidator(object):
 
 		return hashlib.sha1(json_canon.encode("utf-8")).hexdigest()
 
-	def jsonValidateIter(
+	def jsonValidateDoubleIter(
 		self,
-		*args: "Union[str, ParsedContentEntry]",
+		argsiter: "Iterable[Union[str, ParsedContentEntry]]",
 		verbose: "Optional[bool]" = None,
 		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
 		guess_unmatched: "Union[bool, Sequence[str]]" = False,
+		iterate_over_arrays: "bool" = False,
 	) -> "Iterator[Any]":
 		"""
 		This method validates a given list of JSON contents.
@@ -872,159 +881,221 @@ class ExtensibleValidator(object):
 
 		# First pass, check against JSON schema, as well as primary keys unicity
 		self.logger.log(logLevel, "PASS 1: Schema validation and PK checks")
-		iJsonPossible = -1
-		jsonPossibles: "MutableSequence[Optional[Union[str, ParsedContentEntry]]]" = (
-			list(args)
-		)
-		for jsonPossible in jsonPossibles:
-			iJsonPossible += 1
-			jsonObj = None
 
-			assert jsonPossible is not None
-			if isinstance(jsonPossible, dict):
-				jsonObj = jsonPossible
-				errors = jsonObj.get("errors")
-				if errors is None:
-					self.logger.log(
-						logLevel,
-						"\tIGNORE: cached JSON does not have the mandatory 'errors' attribute, so it cannot be processed",
-					)
-					numFilePass1Ignore += 1
+		def input_iterator(
+			argsiter: "Iterable[Union[str, ParsedContentEntry]]",
+		) -> "Iterator[ParsedContentEntry]":
+			nonlocal numDirOK
+			nonlocal numDirFail
+			nonlocal numFilePass1OK
+			nonlocal numFilePass1Ignore
+			nonlocal numFilePass1Fail
+			nonlocal numFilePass2OK
+			nonlocal numFilePass2Fail
+			nonlocal iterate_over_arrays
 
-					# For the report
-					jsonObj.setdefault(
-						"errors",
-						[
-							{
-								"reason": "ignored",
-								"description": "Programming error: uninitialized error structures",
-							}
-						],
-					)
-					yield jsonObj
-
-					# Masking it for the pass 2 loop
-					jsonPossibles[iJsonPossible] = None
-					continue
-
-				jsonDoc = jsonObj.get("json")
-				if jsonDoc is None:
-					self.logger.log(
-						logLevel,
-						"\tIGNORE: cached JSON does not have the mandatory 'json' attribute, so it cannot be processed",
-					)
-					errors.append(
-						{
-							"reason": "ignored",
-							"description": "Programming error: the cached json is missing",
-						}
-					)
-					numFilePass1Ignore += 1
-
-					# For the report
-					yield jsonObj
-
-					# Masking it for the pass 2 loop
-					jsonPossibles[iJsonPossible] = None
-					continue
-
-				jsonFile = jsonObj.setdefault("file", "(inline)")
-			elif os.path.isdir(jsonPossible):
-				jsonDir = jsonPossible
-				# It's a possible JSON directory, not a JSON file
-				try:
-					for relJsonFile in os.listdir(jsonDir):
-						# Skipping hidden files / directories
-						if relJsonFile[0] == ".":
-							continue
-
-						newJsonFile = os.path.join(jsonDir, relJsonFile)
-						if (
-							os.path.isdir(newJsonFile)
-							or ".json" in relJsonFile
-							or ".yaml" in relJsonFile
-						):
-							jsonPossibles.append(newJsonFile)
-
-					numDirOK += 1
-				except IOError as ioe:
-					self.logger.critical(
-						"FATAL ERROR: Unable to open/process JSON directory {0}. Reason: {1}".format(
-							jsonDir, ioe.strerror
-						)
-					)
-					yield {
-						"file": jsonDir,
-						"errors": [
-							{
-								"reason": "fatal",
-								"description": "Unable to open/process JSON directory",
-							}
-						],
-					}
-					numDirFail += 1
-				finally:
-					# Masking it for the pass 2 loop
-					jsonPossibles[iJsonPossible] = None
-
-				continue
-			else:
-				jsonFile = jsonPossible
-				try:
-					self.logger.log(logLevel, "* Validating {0}".format(jsonFile))
+			for jsonPossible in argsiter:
+				assert jsonPossible is not None
+				if isinstance(jsonPossible, dict):
+					yield jsonPossible
+				elif os.path.isdir(jsonPossible):
+					jsonDir = jsonPossible
+					# It's a possible JSON directory, not a JSON file
+					jsonDirPossibles = []
 					try:
-						with open(jsonFile, mode="r", encoding="utf-8") as jHandle:
-							jsonDoc = json.load(jHandle)
-					except json.decoder.JSONDecodeError as jde:
-						try:
-							with open(jsonFile, mode="r", encoding="utf-8") as jHandle:
-								jsonDoc = yaml.safe_load(jHandle)
-						except yaml.error.MarkedYAMLError as mye:
-							self.logger.error(
-								"\t- ERROR: Unable to parse file {0} neither as JSON or YAML. Reasons: {1} {2}".format(
-									jsonFile, str(jde), str(mye)
-								)
-							)
-							# Masking it for the next loop
-							yield {
-								"file": jsonFile,
-								"errors": [
-									{
-										"reason": "fatal",
-										"description": "Unable to parse file",
-									}
-								],
-							}
-							jsonPossibles[iJsonPossible] = None
-							numFilePass1Fail += 1
-							continue
+						for relJsonFile in os.listdir(jsonDir):
+							# Skipping hidden files / directories
+							if relJsonFile[0] == ".":
+								continue
 
-				except IOError as ioe:
-					self.logger.error(
-						"\t- ERROR: Unable to open/read file {0}. Reason: {1}".format(
-							jsonFile, ioe.strerror
+							newJsonFile = os.path.join(jsonDir, relJsonFile)
+							if (
+								os.path.isdir(newJsonFile)
+								or ".json" in relJsonFile
+								or ".yaml" in relJsonFile
+							):
+								jsonDirPossibles.append(newJsonFile)
+
+						numDirOK += 1
+					except IOError as ioe:
+						self.logger.critical(
+							"FATAL ERROR: Unable to open/process JSON directory {0}. Reason: {1}".format(
+								jsonDir, ioe.strerror
+							)
 						)
-					)
-					# Masking it for the next loop
-					yield {
-						"file": jsonFile,
-						"errors": [
-							{
-								"reason": "fatal",
-								"description": "Unable to open/read file",
-							}
-						],
-					}
-					jsonPossibles[iJsonPossible] = None
-					numFilePass1Fail += 1
-					continue
+						yield {
+							"file": jsonDir,
+							"errors": [
+								{
+									"reason": "fatal",
+									"description": "Unable to open/process JSON directory",
+								}
+							],
+						}
+						numDirFail += 1
+
+					if len(jsonDirPossibles) > 0:
+						yield from input_iterator(jsonDirPossibles)
 
 				else:
-					errors = []
-					jsonObj = {"file": jsonFile, "json": jsonDoc, "errors": errors}
-					# Upgrading for the next loop
-					jsonPossibles[iJsonPossible] = jsonObj
+					jsonFile = jsonPossible
+					try:
+						self.logger.log(logLevel, "* Validating {0}".format(jsonFile))
+						errors: "ErrorsType"
+						jsonObj: "ParsedContentEntry"
+						if iterate_over_arrays:
+							self.logger.log(
+								logLevel,
+								"\t- Assuming it is an array and validate each element separatedly",
+							)
+							try:
+								with open(
+									jsonFile, mode="r", encoding="utf-8"
+								) as jHandle:
+									ielem = 0
+									for jsonDoc in ijson.items(jHandle, "item"):
+										errors = []
+										jsonObj = {
+											"file": jsonFile + " [" + str(ielem) + "]",
+											"json": jsonDoc,
+											"errors": errors,
+										}
+										ielem += 1
+										# Upgrading for the next loop
+										yield jsonObj
+							except ijson.common.IncompleteJSONError as ije:
+								self.logger.error(
+									"\t- ERROR: Error iteratively parsing file {0} as JSON. Reason: {1}".format(
+										jsonFile, str(ije)
+									)
+								)
+								# Masking it for the next loop
+								yield {
+									"file": jsonFile,
+									"errors": [
+										{
+											"reason": "fatal",
+											"description": "Error iteratively parsing file",
+										}
+									],
+								}
+								numFilePass1Fail += 1
+								continue
+						else:
+							try:
+								with open(
+									jsonFile, mode="r", encoding="utf-8"
+								) as jHandle:
+									jsonDoc = json.load(jHandle)
 
+							except json.decoder.JSONDecodeError as jde:
+								try:
+									with open(
+										jsonFile, mode="r", encoding="utf-8"
+									) as jHandle:
+										jsonDoc = yaml.safe_load(jHandle)
+								except yaml.error.MarkedYAMLError as mye:
+									self.logger.error(
+										"\t- ERROR: Unable to parse file {0} neither as JSON or YAML. Reasons: {1} {2}".format(
+											jsonFile, str(jde), str(mye)
+										)
+									)
+									# Masking it for the next loop
+									yield {
+										"file": jsonFile,
+										"errors": [
+											{
+												"reason": "fatal",
+												"description": "Unable to parse file",
+											}
+										],
+									}
+									numFilePass1Fail += 1
+									continue
+
+							errors = []
+							jsonObj = {
+								"file": jsonFile,
+								"json": jsonDoc,
+								"errors": errors,
+							}
+							# Upgrading for the next loop
+							yield jsonObj
+
+					except IOError as ioe:
+						self.logger.error(
+							"\t- ERROR: Unable to open/read file {0}. Reason: {1}".format(
+								jsonFile, ioe.strerror
+							)
+						)
+						# Masking it for the next loop
+						yield {
+							"file": jsonFile,
+							"errors": [
+								{
+									"reason": "fatal",
+									"description": "Unable to open/read file",
+								}
+							],
+						}
+						numFilePass1Fail += 1
+
+		jsonPossibles: "MutableSequence[ParsedContentEntry]" = []
+
+		# Processing the iteration of ParsedContentEntry
+		for jsonPossible in input_iterator(argsiter):
+			assert jsonPossible is not None
+			jsonObj = jsonPossible
+			errors = jsonObj.get("errors")
+			if errors is None:
+				self.logger.log(
+					logLevel,
+					"\tIGNORE: cached JSON does not have the mandatory 'errors' attribute, so it cannot be processed",
+				)
+				numFilePass1Ignore += 1
+
+				# For the report
+				jsonObj.setdefault(
+					"errors",
+					[
+						{
+							"reason": "ignored",
+							"description": "Programming error: uninitialized error structures",
+						}
+					],
+				)
+				yield jsonObj
+
+				# Masking it for the pass 2 loop
+				continue
+			elif len(errors) > 0:
+				# It is an error
+				yield jsonObj
+				continue
+
+			jsonDoc = jsonObj.get("json")
+			if jsonDoc is None:
+				self.logger.log(
+					logLevel,
+					"\tIGNORE: cached JSON does not have the mandatory 'json' attribute, so it cannot be processed",
+				)
+				errors.append(
+					{
+						"reason": "ignored",
+						"description": "Programming error: the cached json is missing",
+					}
+				)
+				numFilePass1Ignore += 1
+
+				# For the report
+				yield jsonObj
+
+				# Masking it for the pass 2 loop
+				continue
+
+			jsonFile = jsonObj.setdefault("file", "(inline)")
+
+			isValid = False
 			# Getting the schema id to locate the proper schema to validate against
 			jsonSchemaIdVal: "Optional[str]" = None
 			offered_schema_ids: "Sequence[str]" = list(
@@ -1113,14 +1184,15 @@ class ExtensibleValidator(object):
 							)
 
 						# Masking it for the next loop
-						yield jsonPossibles[iJsonPossible]
-						jsonPossibles[iJsonPossible] = None
 						numFilePass1Fail += 1
 					else:
 						# Does the schema contain a PK declaration?
 						isValid = True
 						self.logger.log(logLevel, "\t- Validated!")
 						numFilePass1OK += 1
+
+						# Do not yield it yet
+						jsonPossibles.append(jsonObj)
 				else:
 					self.logger.log(
 						logLevel,
@@ -1137,8 +1209,6 @@ class ExtensibleValidator(object):
 						}
 					)
 					# Masking it for the next loop
-					yield jsonPossibles[iJsonPossible]
-					jsonPossibles[iJsonPossible] = None
 					numFilePass1Ignore += 1
 			elif guess_unmatched:
 				all_errors: "MutableSequence[ValidationError]" = []
@@ -1212,6 +1282,9 @@ class ExtensibleValidator(object):
 					isValid = True
 					self.logger.log(logLevel, "\t- Validated!")
 					numFilePass1OK += 1
+
+					# Do not yield it yet
+					jsonPossibles.append(jsonObj)
 				else:
 					self.logger.error(
 						f"\t- CUMULATE ({len(p_schemaHash)} schemas) ERRORS:\n"
@@ -1247,8 +1320,6 @@ class ExtensibleValidator(object):
 						)
 
 					# Masking it for the next loop
-					yield jsonPossibles[iJsonPossible]
-					jsonPossibles[iJsonPossible] = None
 					numFilePass1Fail += 1
 			else:
 				self.logger.log(
@@ -1264,13 +1335,10 @@ class ExtensibleValidator(object):
 					}
 				)
 				# Masking it for the next loop
-				yield jsonPossibles[iJsonPossible]
-				jsonPossibles[iJsonPossible] = None
 				numFilePass1Ignore += 1
 
-		# use Data::Dumper;
-		#
-		# print Dumper(\%PKvals),"\n";
+			if not isValid:
+				yield jsonObj
 
 		if dynSchemaValList:
 			# Second pass, check foreign keys against gathered primary keys
@@ -1284,12 +1352,7 @@ class ExtensibleValidator(object):
 
 			# use Data::Dumper;
 			# print Dumper(@jsonFiles),"\n";
-			for jsonObjPossible in cast(
-				"MutableSequence[Optional[ParsedContentEntry]]", jsonPossibles
-			):
-				if jsonObjPossible is None:
-					continue
-
+			for jsonObjPossible in jsonPossibles:
 				# Adding this survivor to the report
 				jsonFile = jsonObjPossible["file"]
 				self.logger.log(logLevel, "* Additional checks on {0}".format(jsonFile))
@@ -1329,12 +1392,29 @@ class ExtensibleValidator(object):
 			),
 		)
 
+	def jsonValidateIter(
+		self,
+		*args: "Union[str, ParsedContentEntry]",
+		verbose: "Optional[bool]" = None,
+		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
+		guess_unmatched: "Union[bool, Sequence[str]]" = False,
+		iterate_over_arrays: "bool" = False,
+	) -> "Iterator[Any]":
+		return self.jsonValidateDoubleIter(
+			args,
+			verbose=verbose,
+			schema_key_expr=schema_key_expr,
+			guess_unmatched=guess_unmatched,
+			iterate_over_arrays=iterate_over_arrays,
+		)
+
 	def jsonValidate(
 		self,
 		*args: "Union[str, ParsedContentEntry]",
 		verbose: "Optional[bool]" = None,
 		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
 		guess_unmatched: "Union[bool, Sequence[str]]" = False,
+		iterate_over_arrays: "bool" = False,
 	) -> "Sequence[Any]":
 		"""
 		This method validates a given list of JSON contents.
@@ -1357,6 +1437,7 @@ class ExtensibleValidator(object):
 				verbose=verbose,
 				schema_key_expr=schema_key_expr,
 				guess_unmatched=guess_unmatched,
+				iterate_over_arrays=iterate_over_arrays,
 				*args,
 			)
 		)
