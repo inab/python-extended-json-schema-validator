@@ -10,12 +10,14 @@ from urllib.request import Request, urlopen
 from jsonschema.exceptions import ValidationError
 
 from .abstract_check import CheckContext
-from .unique_check import (
+from .index_check import (
 	ALLOWED_ATOMIC_VALUE_TYPES,
-	UniqueDef,
+	IndexDef,
+	IndexLoc,
+	IndexContext,
+)
+from .unique_check import (
 	UniqueKey,
-	UniqueLoc,
-	UniqueContext,
 )
 
 if TYPE_CHECKING:
@@ -57,8 +59,8 @@ class PrimaryKey(UniqueKey):
 		self.doPopulate = False
 		self.gotIdsSet: "Optional[MutableMapping[str, Sequence[str]]]" = None
 		self.warmedUp = False
-		self.PopulatedPKWorld: "MutableMapping[int, UniqueDef]" = dict()
-		self.PopulatedPKWorldByName: "MutableMapping[str, UniqueDef]" = dict()
+		self.PopulatedPKWorld: "MutableMapping[int, IndexDef]" = dict()
+		self.PopulatedPKWorldByName: "MutableMapping[str, IndexDef]" = dict()
 
 	@property
 	def triggerAttribute(self) -> str:
@@ -112,7 +114,7 @@ class PrimaryKey(UniqueKey):
 		return self.SchemaErrorReasonPK
 
 	###
-	# Bootstrapping is done by unique_check implementation
+	# Bootstrapping is done by index_check implementation
 	# which is inherited
 	###
 
@@ -191,8 +193,8 @@ class PrimaryKey(UniqueKey):
 					UniqueWorld = self.PopulatedPKWorld
 					UniqueWorldByName = self.PopulatedPKWorldByName
 				else:
-					UniqueWorld = self.UniqueWorld
-					UniqueWorldByName = self.UniqueWorldByName
+					UniqueWorld = self.IndexWorld
+					UniqueWorldByName = self.IndexWorldByName
 
 				uniqueDef = UniqueWorld.get(unique_id)
 				if uniqueDef is None:
@@ -201,8 +203,8 @@ class PrimaryKey(UniqueKey):
 						unique_name = f"{self.randomKeyPrefix}_{unique_id}"
 					uniqueDef = UniqueWorld.setdefault(
 						unique_id,
-						UniqueDef(
-							uniqueLoc=UniqueLoc(
+						IndexDef(
+							indexLoc=IndexLoc(
 								schemaURI=self.schemaURI, path="(unknown)"
 							),
 							members=unique_members,
@@ -226,9 +228,11 @@ class PrimaryKey(UniqueKey):
 						other_compURL = uniqueSet.get(theValue)
 						# Only complain about collisions
 						# from different pid providers
-						if (other_compURL is not None) and (other_compURL != compURL):
+						if (other_compURL is not None) and (
+							compURL not in other_compURL
+						):
 							if allow_provider_duplicates:
-								collision_urls.add(other_compURL)
+								collision_urls.update(other_compURL)
 							else:
 								raise ValidationError(
 									"Duplicated {0} value from {1} for PK {2} -=> {3} <=-  (got from {4}, appeared in {5})".format(
@@ -242,7 +246,7 @@ class PrimaryKey(UniqueKey):
 									validator_value={"reason": self._errorReason},
 								)
 						elif other_compURL is None:
-							uniqueSet[theValue] = compURL
+							uniqueSet[theValue] = set([compURL])
 
 					if len(collision_urls) > 0:
 						self.logger.warning(
@@ -263,7 +267,7 @@ class PrimaryKey(UniqueKey):
 			# Needed to populate the cache of ids
 			# and the unicity check
 			unique_id = id(schema)
-			uniqueDef = self.UniqueWorld.get(unique_id)
+			uniqueDef = self.IndexWorld.get(unique_id)
 			if uniqueDef is None:
 				if isinstance(unique_state, dict):
 					unique_members = unique_state["members"]
@@ -275,16 +279,16 @@ class PrimaryKey(UniqueKey):
 				if unique_name is None:
 					unique_name = f"{self.randomKeyPrefix}_{unique_id}"
 
-				uniqueDef = self.UniqueWorld.setdefault(
+				uniqueDef = self.IndexWorld.setdefault(
 					unique_id,
-					UniqueDef(
-						uniqueLoc=UniqueLoc(schemaURI=self.schemaURI, path="(unknown)"),
+					IndexDef(
+						indexLoc=IndexLoc(schemaURI=self.schemaURI, path="(unknown)"),
 						members=unique_members,
 						name=unique_name,
 						values=dict(),
 					),
 				)
-				self.UniqueWorld[unique_id] = uniqueDef
+				self.IndexWorld[unique_id] = uniqueDef
 
 			self.doDefaultPopulation(
 				unique_id=unique_id,
@@ -326,7 +330,7 @@ class PrimaryKey(UniqueKey):
 						validator_value={"reason": self._errorReason},
 					)
 				else:
-					uniqueSet[theValue] = self.currentJSONFile
+					uniqueSet[theValue] = set([self.currentJSONFile])
 
 	def getContext(self) -> "Optional[CheckContext]":
 		# These are needed to assure the context is always completely populated
@@ -337,15 +341,15 @@ class PrimaryKey(UniqueKey):
 			ConsolidatedUniqueWorld = copy.copy(self.PopulatedPKWorld)
 			ConsolidatedUniqueWorldByName = copy.copy(self.PopulatedPKWorldByName)
 
-			for unique_id, uniqueDef in self.UniqueWorld.items():
+			for unique_id, uniqueDef in self.IndexWorld.items():
 				baseUniqueDef = ConsolidatedUniqueWorld.get(unique_id)
 				if baseUniqueDef is None:
 					newUniqueDef = uniqueDef
 				else:
 					newUniqueSet = copy.copy(baseUniqueDef.values)
 					newUniqueSet.update(uniqueDef.values)
-					newUniqueDef = UniqueDef(
-						uniqueLoc=baseUniqueDef.uniqueLoc,
+					newUniqueDef = IndexDef(
+						indexLoc=baseUniqueDef.indexLoc,
 						members=baseUniqueDef.members,
 						name=baseUniqueDef.name,
 						values=newUniqueSet,
@@ -353,12 +357,12 @@ class PrimaryKey(UniqueKey):
 				ConsolidatedUniqueWorld[unique_id] = newUniqueDef
 				ConsolidatedUniqueWorldByName[uniqueDef.name] = newUniqueDef
 		else:
-			ConsolidatedUniqueWorld = self.UniqueWorld
-			ConsolidatedUniqueWorldByName = self.UniqueWorldByName
+			ConsolidatedUniqueWorld = self.IndexWorld
+			ConsolidatedUniqueWorldByName = self.IndexWorldByName
 
 		return CheckContext(
 			schemaURI=self.schemaURI,
-			context=UniqueContext(
+			context=IndexContext(
 				ConsolidatedUniqueWorld, ConsolidatedUniqueWorldByName
 			),
 		)
