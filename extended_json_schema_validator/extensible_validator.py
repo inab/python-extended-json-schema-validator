@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from typing import NamedTuple, TYPE_CHECKING, cast
+import uuid
 
 import ijson  # type: ignore[import]
 import jsonpath_ng  # type: ignore[import]
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
 		MutableSequence,
 		Optional,
 		Sequence,
+		Set,
 		Tuple,
 		Type,
 		Union,
@@ -97,6 +99,7 @@ class LoadedSchemasStats(NamedTuple):
 	numFileIgnore: int = 0
 	numFileFail: int = 0
 	numDirFail: int = 0
+	numAnonymous: int = 0
 	numSchemaConsistent: int = 0
 	numSchemaInconsistent: int = 0
 
@@ -124,6 +127,7 @@ class ExtensibleValidator(object):
 		self.schemaHash: "MutableMapping[str, SchemaHashEntry]" = {}
 		self.refSchemaCache: "JsonPointer2Val" = {}
 		self.refSchemaSet: "MutableMapping[str, RefSchemaTuple]" = {}
+		self.anonymousSchemas: "Set[str]" = set()
 		self.customFormatCheckerInstance = JSV.FormatChecker()
 
 		# Registering the custom formats, in order to use them
@@ -144,17 +148,18 @@ class ExtensibleValidator(object):
 		args: "Sequence[Union[str, SchemaHashEntry]]",
 		logLevel: int = logging.DEBUG,
 		refSchemaCache: "JsonPointer2Val" = {},
-		refSchemaSet: "MutableMapping[str, RefSchemaTuple]" = {},
-	) -> "Tuple[Sequence[SchemaHashEntry], JsonPointer2Val, MutableMapping[str, RefSchemaTuple], LoadedSchemasStats]":
+		anonymousSchemas: "Set[str]" = set(),
+	) -> "Tuple[Sequence[SchemaHashEntry], JsonPointer2Val, Set[str], LoadedSchemasStats]":
 		# Schema validation stats
 		numDirOK = 0
 		numDirFail = 0
 		numFileIgnore = 0
 		numFileFail = 0
+		numAnonymous = 0
 
 		self.logger.log(logLevel, "PASS 0.a: JSON schema loading and cache generation")
 		jsonSchemaPossibles = list(args)
-		jsonSchemaNext = []
+		jsonSchemaNext: "MutableSequence[SchemaHashEntry]" = []
 		refSchemaFile: "MutableMapping[str, str]" = {}
 		inlineCounter = 0
 		for jsonSchemaPossible in jsonSchemaPossibles:
@@ -299,37 +304,15 @@ class ExtensibleValidator(object):
 			# Getting the JSON Schema URI, needed by this
 			idKey = "$id" if "$id" in jsonSchema else "id"
 			jsonSchemaURI = jsonSchema.get(idKey)
-			if jsonSchemaURI is not None:
-				schemaObj["id_key"] = idKey
-				schemaObj["uri"] = jsonSchemaURI
-				if jsonSchemaURI in refSchemaFile:
-					self.logger.error(
-						"\tERROR: schema in {0} and schema in {1} have the same id".format(
-							jsonSchemaFile, refSchemaFile[jsonSchemaURI]
-						)
-					)
-					errors.append(
-						{
-							"reason": "dup_id",
-							"description": "schema in {0} and schema in {1} have the same id".format(
-								jsonSchemaFile, refSchemaFile[jsonSchemaURI]
-							),
-						}
-					)
-					numFileFail += 1
-					continue
-				else:
-					refSchemaCache[jsonSchemaURI] = jsonSchema
-					refSchemaFile[jsonSchemaURI] = jsonSchemaFile
-			else:
-				numFileIgnore += 1
-				self.logger.log(
-					logLevel,
-					"\tIGNORE: Schema in {0} has no id attribute".format(
-						jsonSchemaFile
-					),
-				)
+			if jsonSchemaURI is None:
 				if self.doNotValidateNoId:
+					numFileIgnore += 1
+					self.logger.log(
+						logLevel,
+						"\tIGNORE: Schema in {0} has no id attribute".format(
+							jsonSchemaFile
+						),
+					)
 					errors.append(
 						{
 							"reason": "no_id",
@@ -341,6 +324,44 @@ class ExtensibleValidator(object):
 					numFileIgnore += 1
 					continue
 
+				# Saving the "anonymous" schemas
+				# requires patching it
+				jsonSchemaURI = uuid.uuid4().urn
+				idKey = "$id"
+				jsonSchema[idKey] = jsonSchemaURI
+				self.logger.log(
+					logLevel,
+					"\tIGNORE: Schema in {0} has no id attribute, assigned randomly {1}".format(
+						jsonSchemaFile,
+						jsonSchemaURI,
+					),
+				)
+				numAnonymous += 1
+				anonymousSchemas.add(jsonSchemaURI)
+
+			schemaObj["id_key"] = idKey
+			schemaObj["uri"] = jsonSchemaURI
+			if jsonSchemaURI in refSchemaFile:
+				self.logger.error(
+					"\tERROR: schema in {0} and schema in {1} have the same id".format(
+						jsonSchemaFile, refSchemaFile[jsonSchemaURI]
+					)
+				)
+				errors.append(
+					{
+						"reason": "dup_id",
+						"description": "schema in {0} and schema in {1} have the same id".format(
+							jsonSchemaFile, refSchemaFile[jsonSchemaURI]
+						),
+					}
+				)
+				numFileFail += 1
+				continue
+
+			# Preserving it
+			refSchemaCache[jsonSchemaURI] = jsonSchema
+			refSchemaFile[jsonSchemaURI] = jsonSchemaFile
+
 			# We need to store these before creating the validators
 			# in order to build the RefSchema cache
 			jsonSchemaNext.append(schemaObj)
@@ -350,9 +371,10 @@ class ExtensibleValidator(object):
 			numFileIgnore=numFileIgnore,
 			numFileFail=numFileFail,
 			numDirFail=numDirFail,
+			numAnonymous=numAnonymous,
 		)
 
-		return jsonSchemaNext, refSchemaCache, refSchemaSet, loadedSchemasStats
+		return jsonSchemaNext, refSchemaCache, anonymousSchemas, loadedSchemasStats
 
 	def _validateJSONSchemas(
 		self,
@@ -379,7 +401,9 @@ class ExtensibleValidator(object):
 			assert plain_validator is not None
 
 			# Getting the JSON Schema URI, needed by this
-			jsonSchemaURI = schemaObj["uri"]
+			jsonSchemaURI = schemaObj.get("uri")
+			if jsonSchemaURI is None:
+				continue
 
 			validator, customFormatInstances = extendValidator(
 				jsonSchemaURI,
@@ -532,6 +556,7 @@ class ExtensibleValidator(object):
 		numFileOK = 0
 		numFileIgnore = 0
 		numFileFail = 0
+		numAnonymous = 0
 
 		if verbose:
 			logLevel = logging.INFO
@@ -542,15 +567,19 @@ class ExtensibleValidator(object):
 		(
 			jsonSchemaNext,
 			refSchemaCache,
-			refSchemaSet,
+			anonymousSchemas,
 			initialStats,
 		) = self._loadAndCacheJsonSchemas(args=args, logLevel=logLevel)
 		self.refSchemaCache = refSchemaCache
-		self.refSchemaSet = refSchemaSet
+		self.anonymousSchemas |= anonymousSchemas
 		numDirOK = initialStats.numDirOK
 		numDirFail = initialStats.numDirFail
 		numFileIgnore = initialStats.numFileIgnore
 		numFileFail = initialStats.numFileFail
+		numAnonymous = initialStats.numAnonymous
+
+		refSchemaSet: "MutableMapping[str, RefSchemaTuple]" = {}
+		self.refSchemaSet = refSchemaSet
 
 		# Pass 0.b
 		refSchemaListSet, valStats = self._validateJSONSchemas(
@@ -699,6 +728,7 @@ class ExtensibleValidator(object):
 			numFileIgnore=numFileIgnore,
 			numFileFail=numFileFail,
 			numDirFail=numDirFail,
+			numAnonymous=numAnonymous,
 			numSchemaConsistent=numSchemaConsistent,
 			numSchemaInconsistent=numSchemaInconsistent,
 		)
