@@ -37,10 +37,14 @@ if TYPE_CHECKING:
 
 	from .abstract_check import FeatureValidatorConfig
 
+	InlineAtomicPKVal = Union[bool, int, float, str, None]
+	InlinePKVal = Union[InlineAtomicPKVal, Mapping[str, Any], Sequence[Any]]
+
 	class PKConfigDict(TypedDict, total=False):
 		schema_prefix: str
 		accept: str
 		provider: Union[str, Sequence[str]]
+		inline_provider: Mapping[str, Sequence[InlinePKVal]]
 
 
 class PrimaryKey(UniqueKey):
@@ -57,7 +61,7 @@ class PrimaryKey(UniqueKey):
 	):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
 		self.doPopulate = False
-		self.gotIdsSet: "Optional[MutableMapping[str, Sequence[str]]]" = None
+		self.gotIdsSet: "Optional[MutableMapping[str, Sequence[InlinePKVal]]]" = None
 		self.warmedUp = False
 		self.PopulatedPKWorld: "MutableMapping[int, IndexDef]" = dict()
 		self.PopulatedPKWorldByName: "MutableMapping[str, IndexDef]" = dict()
@@ -126,10 +130,22 @@ class PrimaryKey(UniqueKey):
 				"Optional[PKConfigDict]", self.config.get(self.triggerAttribute)
 			)
 			if setup is not None:
+				# The provided inline list of ids
+				schema2id = setup.get("inline_provider", {})
+				gotIds = schema2id.get(self.schemaURI)
+				if isinstance(gotIds, list):
+					if self.gotIdsSet is None:
+						self.gotIdsSet = {}
+					self.gotIdsSet["__inline__"] = [
+						[gotId] if not isinstance(gotId, list) else gotId
+						for gotId in gotIds
+					]
+
 				prefix = setup.get("schema_prefix")
 				accept = setup.get("accept")
 				if prefix != self.schemaURI and accept is not None:
-					self.gotIdsSet = {}
+					if self.gotIdsSet is None:
+						self.gotIdsSet = {}
 
 					# The list of sources
 					url_base_list_raw = setup.get("provider", [])
@@ -225,7 +241,24 @@ class PrimaryKey(UniqueKey):
 				for compURL, gotIds in self.gotIdsSet.items():
 					collision_urls = set()
 					for theValue in gotIds:
-						other_compURL = uniqueSet.get(theValue)
+						key_string: "InlineAtomicPKVal"
+						isAtomicValue = isinstance(theValue, ALLOWED_ATOMIC_VALUE_TYPES)
+
+						if isAtomicValue:
+							key_string = cast("InlineAtomicPKVal", theValue)
+						else:
+							assert isinstance(theValue, list)
+							ks_answer = self.GenKeyStrings(
+								tuple(map(lambda tv: [tv], theValue))
+							)
+
+							# This can happen with some
+							# data types, like dictionaries
+							if len(ks_answer) == 0:
+								continue
+							key_string = ks_answer[0]
+
+						other_compURL = uniqueSet.get(key_string)
 						# Only complain about collisions
 						# from different pid providers
 						if (other_compURL is not None) and (
@@ -239,14 +272,14 @@ class PrimaryKey(UniqueKey):
 										self.triggerAttribute,
 										compURL,
 										uniqueDef.name,
-										theValue,
+										key_string,
 										uniqueDef.members,
 										other_compURL,
 									),
 									validator_value={"reason": self._errorReason},
 								)
 						elif other_compURL is None:
-							uniqueSet[theValue] = set([compURL])
+							uniqueSet[key_string] = set([compURL])
 
 					if len(collision_urls) > 0:
 						self.logger.warning(
