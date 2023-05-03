@@ -136,10 +136,7 @@ class PrimaryKey(UniqueKey):
 				if isinstance(gotIds, list):
 					if self.gotIdsSet is None:
 						self.gotIdsSet = {}
-					self.gotIdsSet["__inline__"] = [
-						[gotId] if not isinstance(gotId, list) else gotId
-						for gotId in gotIds
-					]
+					self.gotIdsSet["__inline__"] = gotIds
 
 				prefix = setup.get("schema_prefix")
 				accept = setup.get("accept")
@@ -247,9 +244,12 @@ class PrimaryKey(UniqueKey):
 						if isAtomicValue:
 							key_string = cast("InlineAtomicPKVal", theValue)
 						else:
-							assert isinstance(theValue, list)
+							if isinstance(theValue, (list, tuple)):
+								proc_value = theValue
+							else:
+								proc_value = [theValue]
 							ks_answer = self.GenKeyStrings(
-								tuple(map(lambda tv: [tv], theValue))
+								tuple(map(lambda tv: [tv], proc_value))
 							)
 
 							# This can happen with some
