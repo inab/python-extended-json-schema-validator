@@ -1,0 +1,9 @@
+primary_key:
+  inline_provider:
+    'compound_pk_example/1.0':
+    - - uno
+      - diez
+    - - dos
+      - veinte
+    - - tres
+      - treinta

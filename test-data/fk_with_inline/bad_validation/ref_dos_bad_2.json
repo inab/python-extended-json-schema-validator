@@ -1,0 +1,7 @@
+{
+	"@schema": "foreign_key_example/1.0",
+	"something": {
+		"ref_local_id": "2",
+		"ref_other_id": "veinte"
+	}
+}

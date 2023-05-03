@@ -26,12 +26,27 @@ The extensions implemented are focused on features which involve more than one J
     
     + It could have `name` key, which gives a referencing name. This is useful for complex documents where several parts define their own primary keys, so foreign keys scope can be narrowed to an specific primary key.
   
+  + You can pre-populate the list of primary key values from an inline list embedded in the YAML configuration file. It should be something like:
+    
+```yaml
+primary_key:
+  inline_provider:
+    'https://www.elixir-europe.org/excelerate/WP2/json-schemas/1.0/Dataset':
+    - OEBD9990000001
+    - OEBD9990000002
+    - 'Custom:Community'
+    'https://www.elixir-europe.org/excelerate/WP2/json-schemas/1.0/TestAction':
+    - OEBA9990000001
+    - OEBA9990000002
+    - 'Custom:Action'
+```
+
   + You can even pre-populate the list of primary key values from an external source just telling it in the YAML configuration file. It should have something like:
     
 ```yaml
 primary_key:
   provider:
-    - 'https://openebench.bsc.es/openebench/rest/public/'
+    - 'https://openebench.bsc.es/api/scientific/public/'
   allow_provider_duplicates: false
   schema_prefix: 'https://www.elixir-europe.org/excelerate/WP2/json-schemas/1.0/'
   accept: 'text/uri-list'
@@ -40,6 +55,8 @@ primary_key:
     to fetch keys in CSV format from several sources, using as request prefix the different providers, using the suffix of the schema IRI on the composition.
     
     If you want the keys retrieved from the providers to be used only for foreign key checks, then you have to set up the key `allow_provider_duplicates` to **`true`**. This option is also useful when you want to validate data to be updated in the server, the data is using foreign keys, but you don't want to receive duplicate primary key errors due the entries being validated.
+    
+  + And of course, a mix of the previous two styles!
 
 * __Index values check__: When the `index` attribute is declared, the values assigned in that part of the schema on a set of JSON contents can be repeated, and can be referenced by _join keys_. The check includes all the loaded JSON contents. Its behaviour is a very permissive version of `primary_key` extension (there are several examples inside [test-data](test-data)):
 
