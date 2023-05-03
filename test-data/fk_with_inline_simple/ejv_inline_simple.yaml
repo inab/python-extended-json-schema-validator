@@ -1,0 +1,6 @@
+primary_key:
+  inline_provider:
+    'simple_pk_example/1.0':
+    - uno
+    - dos
+    - tres

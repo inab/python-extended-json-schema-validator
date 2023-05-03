@@ -1,0 +1,41 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "simple_fk_example/1.0",
+    "title": "foreign_key implementation example",
+    "type": "object",
+    "properties": {
+        "@schema": {
+            "description": "The JSON schema id",
+            "type": "string",
+            "const": "simple_fk_example/1.0"
+        },
+        "something": {
+			"type": "object",
+			"properties": {
+				"ref_local_id": {
+					"description": "an id referencing other one in a different schema",
+					"type": "string"
+				},
+				"somedesc": {
+					"description": "A description",
+					"type": "string"
+				}
+			},
+			"foreign_keys": [
+				{
+					"schema_id": "simple_pk_example/1.0",
+					"members": [
+						"ref_local_id"
+					]
+				}
+			],
+			"required": [
+				"ref_local_id"
+			]
+		}
+    },
+    "required": [
+        "something"
+    ],
+    "additionalProperties": false
+}
