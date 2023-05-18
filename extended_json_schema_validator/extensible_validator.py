@@ -91,6 +91,7 @@ if TYPE_CHECKING:
 		schema_hash: str
 		schema_id: str
 		errors: ErrorsType
+		annot: "Any"
 
 
 class LoadedSchemasStats(NamedTuple):
@@ -845,7 +846,7 @@ class ExtensibleValidator(object):
 		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
 		guess_unmatched: "Union[bool, Sequence[str]]" = False,
 		iterate_over_arrays: "bool" = False,
-	) -> "Iterator[Any]":
+	) -> "Iterator[ParsedContentEntry]":
 		"""
 		This method validates a given list of JSON contents.
 		These contents can be either already in memory, or
@@ -1429,7 +1430,7 @@ class ExtensibleValidator(object):
 		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
 		guess_unmatched: "Union[bool, Sequence[str]]" = False,
 		iterate_over_arrays: "bool" = False,
-	) -> "Iterator[Any]":
+	) -> "Iterator[ParsedContentEntry]":
 		return self.jsonValidateDoubleIter(
 			args,
 			verbose=verbose,
@@ -1445,7 +1446,7 @@ class ExtensibleValidator(object):
 		schema_key_expr: "str" = DEFAULT_SCHEMA_KEY_JP,
 		guess_unmatched: "Union[bool, Sequence[str]]" = False,
 		iterate_over_arrays: "bool" = False,
-	) -> "Sequence[Any]":
+	) -> "Sequence[ParsedContentEntry]":
 		"""
 		This method validates a given list of JSON contents.
 		These contents can be either already in memory, or

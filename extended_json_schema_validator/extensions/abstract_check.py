@@ -62,6 +62,7 @@ if TYPE_CHECKING:
 		resolved_schema: "Any"
 		id_key: "str"
 		uri: "str"
+		annot: "Any"
 
 	KeyRefs = MutableMapping[str, MutableSequence[FeatureLoc]]
 	Id2ElemId = MutableMapping[int, MutableMapping[str, MutableSequence[Any]]]

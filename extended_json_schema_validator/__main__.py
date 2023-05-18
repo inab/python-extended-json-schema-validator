@@ -26,10 +26,19 @@ if TYPE_CHECKING:
 	from typing import (
 		Any,
 		MutableMapping,
+		MutableSequence,
 		Sequence,
 		Optional,
 		Union,
 	)
+
+	from typing_extensions import (
+		Literal,
+	)
+
+	from .extensible_validator import ParsedContentEntry
+
+	from .extensions.abstract_check import SchemaHashEntry
 
 # This is needed to assure open suports encoding parameter
 if sys.version_info[0] == 2:
@@ -299,32 +308,35 @@ def main() -> None:
 	else:
 		annotP = None
 
-	schema_report = []
+	schema_report: "MutableSequence[Union[SchemaHashEntry, ParsedContentEntry]]" = []
 	if args.reportFilename is not None:
 
 		for loadedSchema in ev.getValidSchemas().values():
-			rep: "MutableMapping[str, Any]" = copy.copy(
-				cast("MutableMapping[str, Any]", loadedSchema)
-			)
+			s_rep = copy.copy(loadedSchema)
 
 			# Removing annoying instances
 			for annoying_key in ("customFormatInstances", "validator", "ref_resolver"):
-				if annoying_key in rep:
-					del rep[annoying_key]
+				if annoying_key in s_rep:
+					del s_rep[
+						cast(
+							'Literal["customFormatInstances", "validator", "ref_resolver"]',
+							annoying_key,
+						)
+					]
 
-			if len(rep["errors"]) > 0:
+			if len(s_rep["errors"]) > 0:
 				exitCode = 3
 			elif args.isErrorReport:
 				continue
 
 			if annotP is not None:
-				for match in annotP.find(rep["schema"]):
-					rep["annot"] = match.value
+				for match in annotP.find(s_rep["schema"]):
+					s_rep["annot"] = match.value
 					break
 			if args.isQuietReport:
-				del rep["schema"]
+				del s_rep["schema"]
 
-			schema_report.append(rep)
+			schema_report.append(s_rep)
 
 	if args.dotReport is not None:
 		from .draw_schemas import drawSchemasToFile
