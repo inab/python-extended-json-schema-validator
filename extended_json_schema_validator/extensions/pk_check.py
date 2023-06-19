@@ -222,6 +222,7 @@ class PrimaryKey(UniqueKey):
 							),
 							members=unique_members,
 							name=unique_name,
+							limit_scope=False,
 							values=dict(),
 						),
 					)
@@ -305,9 +306,12 @@ class PrimaryKey(UniqueKey):
 				if isinstance(unique_state, dict):
 					unique_members = unique_state["members"]
 					unique_name = unique_state.get("name")
+					limit_scope_v = unique_state.get("limit_scope", False)
+					limit_scope = False if limit_scope_v is None else limit_scope_v
 				else:
 					unique_members = unique_state
 					unique_name = None
+					limit_scope = False
 				# Assigning a random name
 				if unique_name is None:
 					unique_name = f"{self.randomKeyPrefix}_{unique_id}"
@@ -318,6 +322,7 @@ class PrimaryKey(UniqueKey):
 						indexLoc=IndexLoc(schemaURI=self.schemaURI, path="(unknown)"),
 						members=unique_members,
 						name=unique_name,
+						limit_scope=limit_scope,
 						values=dict(),
 					),
 				)
@@ -385,6 +390,7 @@ class PrimaryKey(UniqueKey):
 						indexLoc=baseUniqueDef.indexLoc,
 						members=baseUniqueDef.members,
 						name=baseUniqueDef.name,
+						limit_scope=baseUniqueDef.limit_scope,
 						values=newUniqueSet,
 					)
 				ConsolidatedUniqueWorld[unique_id] = newUniqueDef

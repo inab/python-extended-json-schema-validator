@@ -49,6 +49,8 @@ class IndexDef(NamedTuple):
 	members: "Union[bool, Sequence[str]]"
 	values: "IndexedValues"
 	name: str
+	# This is for backward compatibility
+	limit_scope: bool = False
 
 
 class IndexContext(NamedTuple):
@@ -106,6 +108,10 @@ class IndexKey(AbstractCustomFeatureValidator):
 									},
 								]
 							},
+							"limit_scope": {
+								"type": "boolean",
+								"default": False,
+							},
 							"name": {
 								"type": "string",
 								"minLength": 1,
@@ -151,9 +157,12 @@ class IndexKey(AbstractCustomFeatureValidator):
 				if isinstance(poss_members, dict):
 					index_members = poss_members["members"]
 					index_name = poss_members.get("name")
+					limit_scope_v = poss_members.get("limit_scope", False)
+					limit_scope = False if limit_scope_v is None else limit_scope_v
 				else:
 					index_members = poss_members
 					index_name = None
+					limit_scope = False
 				# Assigning a random name
 				if index_name is None:
 					index_name = f"{self.randomKeyPrefix}_{iId}"
@@ -161,6 +170,7 @@ class IndexKey(AbstractCustomFeatureValidator):
 					indexLoc=iLoc,
 					members=index_members,
 					name=index_name,
+					limit_scope=limit_scope,
 					values=dict(),
 				)
 				self.IndexWorld[iId] = iDef
@@ -232,7 +242,7 @@ class IndexKey(AbstractCustomFeatureValidator):
 	@classmethod
 	def GetKeyValues(
 		cls, jsonDoc: "Any", p_members: "Sequence[str]"
-	) -> "Tuple[Any, ...]":
+	) -> "Tuple[Sequence[Any], ...]":
 		return tuple(cls.MaterializeJPath(jsonDoc, member) for member in p_members)
 
 	@classmethod
@@ -298,9 +308,12 @@ class IndexKey(AbstractCustomFeatureValidator):
 				if isinstance(index_state, dict):
 					index_members = index_state["members"]
 					index_name = index_state.get("name")
+					limit_scope_v = index_state.get("limit_scope", False)
+					limit_scope = False if limit_scope_v is None else limit_scope_v
 				else:
 					index_members = index_state
 					index_name = None
+					limit_scope = False
 				# Assigning a random name
 				if index_name is None:
 					index_name = f"{self.randomKeyPrefix}_{index_id}"
@@ -309,6 +322,7 @@ class IndexKey(AbstractCustomFeatureValidator):
 					indexLoc=IndexLoc(schemaURI=self.schemaURI, path="(unknown)"),
 					members=index_members,
 					name=index_name,
+					limit_scope=limit_scope,
 					values=dict(),
 				)
 				self.IndexWorld[index_id] = indexDef
