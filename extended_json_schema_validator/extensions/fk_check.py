@@ -125,7 +125,7 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 							"default": "RESTRICT",
 						},
 					},
-					"required": ["schema_id", "members"],
+					"required": ["members"],
 				},
 				"uniqueItems": True,
 			}
@@ -165,8 +165,10 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 			# fk_defs_gid = loc.path
 			for fk_loc_i, p_FK_decl in enumerate(fk_defs):
 				fk_loc_id = fk_defs_gid + "_" + str(fk_loc_i)
-				ref_schema_id = p_FK_decl["schema_id"]
-				if uritools.isabsuri(self.schemaURI):
+				ref_schema_id = p_FK_decl.get("schema_id")
+				if ref_schema_id is None:
+					abs_ref_schema_id = self.schemaURI
+				elif uritools.isabsuri(self.schemaURI):
 					abs_ref_schema_id = uritools.urijoin(self.schemaURI, ref_schema_id)
 				else:
 					abs_ref_schema_id = ref_schema_id
@@ -215,8 +217,10 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 			fk_defs_gid = str(id(schema))
 			for fk_loc_i, p_FK_decl in enumerate(fk_defs):
 				fk_loc_id = fk_defs_gid + "_" + str(fk_loc_i)
-				ref_schema_id = p_FK_decl["schema_id"]
-				if uritools.isabsuri(self.schemaURI):
+				ref_schema_id = p_FK_decl.get("schema_id")
+				if ref_schema_id is None:
+					abs_ref_schema_id = self.schemaURI
+				elif uritools.isabsuri(self.schemaURI):
 					abs_ref_schema_id = uritools.urijoin(self.schemaURI, ref_schema_id)
 				else:
 					abs_ref_schema_id = ref_schema_id

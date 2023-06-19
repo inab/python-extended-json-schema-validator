@@ -448,12 +448,14 @@ digraph schemas {{
 				# TO FINISH
 				for featureLoc in featureLocs:
 					for fk_decl in featureLoc.context[ForeignKey.KeyAttributeNameFK]:
-						resolved = refResolver_resolve(
-							refResolver, fk_decl["schema_id"]
-						)
-						if resolved is None:
-							continue
-						to_jsonSchemaURI = resolved[0]
+						ref_schema_id = fk_decl.get("schema_id")
+						if ref_schema_id is None:
+							to_jsonSchemaURI = jsonSchemaURI
+						else:
+							resolved = refResolver_resolve(refResolver, ref_schema_id)
+							if resolved is None:
+								continue
+							to_jsonSchemaURI = resolved[0]
 						toHeaderName = to_jsonSchemaURI
 						rSlash = toHeaderName.rfind("/")
 						if rSlash != -1:
