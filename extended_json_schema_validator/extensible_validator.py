@@ -1255,7 +1255,7 @@ class ExtensibleValidator(object):
 						if jsonSchemaIdVal not in guess_unmatched:
 							continue
 					self.logger.log(
-						logLevel, "\t- Using {0} schema".format(jsonSchemaIdVal)
+						logLevel, "\t- Trying {0} schema".format(jsonSchemaIdVal)
 					)
 
 					for customFormatInstance in schemaObj["customFormatInstances"]:
