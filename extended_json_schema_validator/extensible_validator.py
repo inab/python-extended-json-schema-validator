@@ -150,7 +150,9 @@ class ExtensibleValidator(object):
 		logLevel: int = logging.DEBUG,
 		refSchemaCache: "JsonPointer2Val" = {},
 		anonymousSchemas: "Set[str]" = set(),
-	) -> "Tuple[Sequence[SchemaHashEntry], JsonPointer2Val, Set[str], LoadedSchemasStats]":
+	) -> (
+		"Tuple[Sequence[SchemaHashEntry], JsonPointer2Val, Set[str], LoadedSchemasStats]"
+	):
 		# Schema validation stats
 		numDirOK = 0
 		numDirFail = 0
@@ -450,35 +452,32 @@ class ExtensibleValidator(object):
 				base_uri=jsonSchemaURI, referrer=jsonSchema, store=localRefSchemaCache
 			)
 
-			valErrors = [
-				valError
-				for valError in validator(
-					metaSchema, resolver=cachedSchemasResolver
-				).iter_errors(jsonSchema)
-			]
-			if len(valErrors) > 0:
+			printed_errors = False
+			for valError in validator(
+				metaSchema, resolver=cachedSchemasResolver
+			).iter_errors(
+				jsonSchema
+			):
+				if not printed_errors:
+					self.logger.error("\t- ERRORS:\n")
+				printed_errors = True
 				self.logger.error(
-					"\t- ERRORS:\n"
-					+ "\n".join(
-						map(
-							lambda se: "\t\tPath: {0} . Message: {1}".format(
-								"/" + "/".join(map(lambda e: str(e), se.path)),
-								se.message,
-							),
-							valErrors,
-						)
+					"\t\tPath: {0} . Message: {1}".format(
+						"/" + "/".join(map(lambda e: str(e), valError.path)),
+						valError.message,
 					)
 				)
-				for valError in valErrors:
-					errors.append(
-						{
-							"reason": "schema_error",
-							"description": "Path: {0} . Message: {1}".format(
-								"/" + "/".join(map(lambda e: str(e), valError.path)),
-								valError.message,
-							),
-						}
-					)
+				errors.append(
+					{
+						"reason": "schema_error",
+						"description": "Path: {0} . Message: {1}".format(
+							"/" + "/".join(map(lambda e: str(e), valError.path)),
+							valError.message,
+						),
+					}
+				)
+
+			if printed_errors:
 				numFileFail += 1
 			elif jsonSchemaURI is not None:
 				# Getting the JSON Pointer object instance of the augmented schema
@@ -1170,50 +1169,41 @@ class ExtensibleValidator(object):
 						store=self.refSchemaCache,
 					)
 
-					valErrors = [
-						error
-						for error in validator(
-							jsonSchema,
-							format_checker=self.customFormatCheckerInstance,
-							resolver=cachedSchemasResolver,
-						).iter_errors(jsonDoc)
-					]
-
-					if len(valErrors) > 0:
+					printed_errors = False
+					for se in validator(
+						jsonSchema,
+						format_checker=self.customFormatCheckerInstance,
+						resolver=cachedSchemasResolver,
+					).iter_errors(jsonDoc):
+						if not printed_errors:
+							self.logger.error("\t- ERRORS:\n")
+						printed_errors = True
 						self.logger.error(
-							"\t- ERRORS:\n"
-							+ "\n".join(
-								map(
-									lambda se: "\t\tPath: {0} . Message: {1}".format(
-										"/" + "/".join(map(lambda e: str(e), se.path)),
-										se.message,
-									),
-									valErrors,
-								)
+							"\t\tPath: {0} . Message: {1}".format(
+								"/" + "/".join(map(lambda e: str(e), se.path)),
+								se.message,
 							)
 						)
-						for valError in valErrors:
-							if isinstance(valError.validator_value, dict):
-								schema_error_reason = valError.validator_value.get(
-									"reason", "schema_error"
-								)
-							else:
-								schema_error_reason = "schema_error"
-
-							errPath = "/" + "/".join(
-								map(lambda e: str(e), valError.path)
+						if isinstance(se.validator_value, dict):
+							schema_error_reason = se.validator_value.get(
+								"reason", "schema_error"
 							)
-							errors.append(
-								{
-									"reason": schema_error_reason,
-									"description": "Path: {0} . Message: {1}".format(
-										errPath, valError.message
-									),
-									"path": errPath,
-									"schema_id": jsonSchemaIdVal,
-								}
-							)
+						else:
+							schema_error_reason = "schema_error"
 
+						errPath = "/" + "/".join(map(lambda e: str(e), se.path))
+						errors.append(
+							{
+								"reason": schema_error_reason,
+								"description": "Path: {0} . Message: {1}".format(
+									errPath, se.message
+								),
+								"path": errPath,
+								"schema_id": jsonSchemaIdVal,
+							}
+						)
+
+					if printed_errors:
 						# Masking it for the next loop
 						numFilePass1Fail += 1
 					else:
@@ -1281,29 +1271,26 @@ class ExtensibleValidator(object):
 					)
 
 					failed_val = False
-					these_errors = list(
-						validator(
-							jsonSchema,
-							format_checker=self.customFormatCheckerInstance,
-							resolver=cachedSchemasResolver,
-						).iter_errors(jsonDoc)
-					)
+					for this_error in validator(
+						jsonSchema,
+						format_checker=self.customFormatCheckerInstance,
+						resolver=cachedSchemasResolver,
+					).iter_errors(jsonDoc):
+						failed_val = True
+						# Label the errors with the schema_id
+						# so errors are contextualized
+						this_error.schema_id = jsonSchemaIdVal
+						all_errors.append(this_error)
 
-					if len(these_errors) == 0:
+					if failed_val:
+						self.logger.debug(
+							f"{jsonFile} did not validate against {jsonSchemaIdVal}"
+						)
+					else:
 						jsonObj["schema_hash"] = schemaObj["schema_hash"]
 						jsonObj["schema_id"] = jsonSchemaIdVal
 						all_errors = []
 						break
-
-					# Label the errors with the schema_id
-					# so errors are contextualized
-					for this_error in these_errors:
-						this_error.schema_id = jsonSchemaIdVal
-					all_errors.extend(these_errors)
-
-					self.logger.debug(
-						f"{jsonFile} did not validate against {jsonSchemaIdVal}"
-					)
 
 				if len(all_errors) == 0:
 					self.logger.log(
@@ -1319,18 +1306,15 @@ class ExtensibleValidator(object):
 				else:
 					self.logger.error(
 						f"\t- CUMULATE ({len(p_schemaHash)} schemas) ERRORS:\n"
-						+ "\n".join(
-							map(
-								lambda se: "\t\tSchema: {2} Path: {0} . Message: {1}".format(
-									"/" + "/".join(map(lambda e: str(e), se.path)),
-									se.message,
-									se.schema_id,  # type: ignore[attr-defined]
-								),
-								all_errors,
-							)
-						)
 					)
 					for valError in all_errors:
+						self.logger.error(
+							"\t\tSchema: {2} Path: {0} . Message: {1}".format(
+								"/" + "/".join(map(lambda e: str(e), valError.path)),
+								valError.message,
+								valError.schema_id,  # type: ignore[attr-defined]
+							)
+						)
 						if isinstance(valError.validator_value, dict):
 							schema_error_reason = valError.validator_value.get(
 								"reason", "schema_error"
@@ -1345,7 +1329,7 @@ class ExtensibleValidator(object):
 								"description": "Path: {0} . Message: {1}".format(
 									errPath, valError.message
 								),
-								"schema_id": valError.schema_id,
+								"schema_id": valError.schema_id,  # type: ignore[attr-defined]
 								"path": errPath,
 							}
 						)
