@@ -95,7 +95,6 @@ def extendValidator(
 			"Sequence[Type[AbstractCustomFeatureValidator]]",
 			inputCustomValidators[None],
 		):
-
 			dynamicValidator = dynamicValidatorClass(
 				schemaURI, jsonSchemaSource, config=config, isRW=isRW
 			)
@@ -137,6 +136,7 @@ def extendValidator(
 
 
 REF_FEATURE = "$ref"
+
 
 # It returns the set of values' ids
 def traverseJSONSchema(
@@ -457,7 +457,7 @@ def export_resolved_references(
 
 				schema_out[key] = resolved_ref
 	elif isinstance(schema, list):
-		for (idx, value) in enumerate(schema):
+		for idx, value in enumerate(schema):
 			resolved_ref = export_resolved_references(
 				contextSchemaURI, value, schemaHash, resolved
 			)

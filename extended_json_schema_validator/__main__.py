@@ -310,7 +310,6 @@ def main() -> None:
 
 	schema_report: "MutableSequence[Union[SchemaHashEntry, ParsedContentEntry]]" = []
 	if args.reportFilename is not None:
-
 		for loadedSchema in ev.getValidSchemas().values():
 			s_rep = copy.copy(loadedSchema)
 

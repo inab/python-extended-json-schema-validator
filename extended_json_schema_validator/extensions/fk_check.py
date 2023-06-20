@@ -380,7 +380,6 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 						limit_scope = checkValuesKeys.limit_scope
 
 					# Now, checktime!!!!
-					self.logger.error(f"KOMIKA2\n{fkLoc.values}")
 					for fkVals in fkLoc.values:
 						uniqueWhere.add(fkVals.where)
 

@@ -201,7 +201,9 @@ class PrimaryKey(UniqueKey):
 				# The common dictionary for this declaration where all the unique values are kept
 				allow_provider_duplicates = self.config.get(
 					self.triggerAttribute, {}
-				).get("allow_provider_duplicates", False)
+				).get(
+					"allow_provider_duplicates", False
+				)
 				if allow_provider_duplicates:
 					UniqueWorld = self.PopulatedPKWorld
 					UniqueWorldByName = self.PopulatedPKWorldByName
