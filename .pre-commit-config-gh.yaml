@@ -29,7 +29,7 @@ repos:
 #        args: [ -j, "0", --disable=all, --enable=unused-import]
 
   - repo: https://github.com/jmfernandez/pre-commit_mirrors-tan
-    rev: v22.8.0
+    rev: v23.3.0
     hooks:
       - id: tan
         exclude: "^[^/]*env/|dev-[^/]*/"
