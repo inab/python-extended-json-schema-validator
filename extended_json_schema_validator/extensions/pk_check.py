@@ -239,9 +239,18 @@ class PrimaryKey(UniqueKey):
 				for compURL, gotIds in self.gotIdsSet.items():
 					collision_urls = set()
 					for theValue in gotIds:
-						key_string: "InlineAtomicPKVal"
-						isAtomicValue = isinstance(theValue, ALLOWED_ATOMIC_VALUE_TYPES)
+						if uniqueDef.limit_scope:
+							isAtomicValue = False
+							if isinstance(theValue, (list, tuple)):
+								theValue = [compURL, *theValue]
+							else:
+								theValue = [compURL, theValue]
+						else:
+							isAtomicValue = isinstance(
+								theValue, ALLOWED_ATOMIC_VALUE_TYPES
+							)
 
+						key_string: "InlineAtomicPKVal"
 						if isAtomicValue:
 							key_string = cast("InlineAtomicPKVal", theValue)
 						else:
@@ -339,11 +348,16 @@ class PrimaryKey(UniqueKey):
 			else:
 				obtainedValues = ([value],)
 
-			isAtomicValue = (
-				len(obtainedValues) == 1
-				and len(obtainedValues[0]) == 1
-				and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
-			)
+			# We are adding another "indirection"
+			if uniqueDef.limit_scope:
+				obtainedValues = ([self.currentJSONFile], *obtainedValues)
+				isAtomicValue = False
+			else:
+				isAtomicValue = (
+					len(obtainedValues) == 1
+					and len(obtainedValues[0]) == 1
+					and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
+				)
 
 			theValues: "Tuple[Union[str, int, float, bool, None], ...]"
 			if isAtomicValue:

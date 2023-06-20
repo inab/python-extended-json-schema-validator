@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import abc
+import json
 
 from typing import TYPE_CHECKING, NamedTuple, cast
 
@@ -52,16 +53,19 @@ if TYPE_CHECKING:
 	)
 
 
-class FKVal(NamedTuple):
-	value: "Union[str, int, float, bool]"
+class FKVals(NamedTuple):
+	values: "Tuple[Sequence[Any], ...]"
 	where: str  # the JSON file where it happens
+
+	def __hash__(self) -> "int":
+		return hash(json.dumps(self, sort_keys=True))
 
 
 class FKLoc(NamedTuple):
 	schemaURI: str
 	refSchemaURI: str
 	path: str
-	values: "MutableSequence[FKVal]"
+	values: "Set[FKVals]"
 
 
 class FKDef(NamedTuple):
@@ -74,6 +78,7 @@ class PKKeys(NamedTuple):
 	schemaURI: str
 	vals: "MutableSequence[IndexedValues]" = []
 	by_name: "MutableMapping[str, IndexDef]" = {}
+	limit_scope: "bool" = False
 
 
 class AbstractRefKey(AbstractCustomFeatureValidator):
@@ -189,7 +194,7 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 					schemaURI=self.schemaURI,
 					refSchemaURI=abs_ref_schema_id,
 					path=loc.path + "/" + str(fk_loc_i),
-					values=list(),
+					values=set(),
 				)
 				fk_id = abs_ref_schema_id
 				fkDefH = self.FKWorld.setdefault(fk_id, {})
@@ -240,7 +245,7 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 							schemaURI=self.schemaURI,
 							refSchemaURI=abs_ref_schema_id,
 							path="(unknown {})".format(fk_loc_id),
-							values=list(),
+							values=set(),
 						),
 						members=fk_members,
 						refers_to=fk_pk_name,
@@ -252,25 +257,10 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 				else:
 					obtainedValues = ([value],)
 
-				isAtomicValue = (
-					len(obtainedValues) == 1
-					and len(obtainedValues[0]) == 1
-					and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
-				)
-
-				theValues: "Tuple[Union[str, int, float, bool], ...]"
-				if isAtomicValue:
-					theValues = (obtainedValues[0][0],)
-				else:
-					theValues = IndexKey.GenKeyStrings(obtainedValues)
-
-				fkLoc = fkDef.fkLoc
-
-				fkVals = fkLoc.values
-
 				# Second pass will do the validation
-				for theValue in theValues:
-					fkVals.append(FKVal(where=self.currentJSONFile, value=theValue))
+				fkDef.fkLoc.values.add(
+					FKVals(where=self.currentJSONFile, values=obtainedValues)
+				)
 
 	# Now, time to check
 	def doSecondPass(
@@ -300,6 +290,8 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 							if pkKeys is None:
 								pkKeys = PKKeys(
 									schemaURI=pkLoc.schemaURI,
+									# This is needed for unnamed keys
+									limit_scope=pkDef.limit_scope,
 								)
 								pkContextsHash[pkLoc.schemaURI] = pkKeys
 							pkKeys.vals.append(pkDef.values)
@@ -338,59 +330,105 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 						uDef = checkValuesKeys.by_name.get(fkDef.refers_to)
 						# If the named key is not found, fail
 						if uDef is None:
-							for fkVal in fkLoc.values:
-								uniqueWhere.add(fkVal.where)
-								uniqueFailedWhere.add(fkVal.where)
-								errors.append(
-									{
-										"reason": "stale_fk",
-										"description": "Unmatching FK ({0}) in {1} to schema {2} (key {3} not found)".format(
-											fkVal.value,
-											fkVal.where,
-											refSchemaURI,
-											fkDef.refers_to,
-										),
-										"file": fkVal.where,
-										"path": fkPath,
-									}
+							for fkVals in fkLoc.values:
+								uniqueWhere.add(fkVals.where)
+								uniqueFailedWhere.add(fkVals.where)
+
+								# As the key definition was not found,
+								# we cannot assume the value of limit_scope
+								obtainedValues = fkVals.values
+
+								isAtomicValue = (
+									len(obtainedValues) == 1
+									and len(obtainedValues[0]) == 1
+									and isinstance(
+										obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES
+									)
 								)
+
+								theValues0: "Tuple[Union[str, int, float, bool], ...]"
+								if isAtomicValue:
+									theValues0 = (obtainedValues[0][0],)
+								else:
+									theValues0 = IndexKey.GenKeyStrings(obtainedValues)
+
+								for theValue0 in theValues0:
+									errors.append(
+										{
+											"reason": "stale_fk",
+											"description": "Unmatchable FK ({0}) in {1} to schema {2} (key {3} not found)".format(
+												theValue0,
+												fkVals.where,
+												refSchemaURI,
+												fkDef.refers_to,
+											),
+											"file": fkVals.where,
+											"path": fkPath,
+										}
+									)
 							continue
 
 						# As it was found, go ahead
 						checkValuesList = [uDef.values]
+						limit_scope = uDef.limit_scope
 					else:
 						# When the key has no name,
 						# or it is not targetted
 						# then check against all
 						# the keys in the context
 						checkValuesList = checkValuesKeys.vals
+						limit_scope = checkValuesKeys.limit_scope
 
 					# Now, checktime!!!!
-					for fkVal in fkLoc.values:
-						uniqueWhere.add(fkVal.where)
+					self.logger.error(f"KOMIKA2\n{fkLoc.values}")
+					for fkVals in fkLoc.values:
+						uniqueWhere.add(fkVals.where)
 
-						fkString = fkVal.value
-						found = False
-						for checkValues in checkValuesList:
-							if fkString in checkValues:
-								found = True
-								break
-
-						if not found:
-							uniqueFailedWhere.add(fkVal.where)
-							errors.append(
-								{
-									"reason": "stale_fk",
-									"description": "Unmatching FK ({0}) in {1} to schema {2} (key {3})".format(
-										fkString,
-										fkVal.where,
-										refSchemaURI,
-										fkDef.refers_to,
-									),
-									"file": fkVal.where,
-									"path": fkPath,
-								}
+						obtainedValues = fkVals.values
+						# We are adding another "indirection"
+						if limit_scope:
+							obtainedValues = ([fkVals.where], *obtainedValues)
+							isAtomicValue = False
+						else:
+							isAtomicValue = (
+								len(obtainedValues) == 1
+								and len(obtainedValues[0]) == 1
+								and isinstance(
+									obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES
+								)
 							)
+
+						theValues: "Tuple[Union[str, int, float, bool], ...]"
+						if isAtomicValue:
+							theValues = (obtainedValues[0][0],)
+						else:
+							theValues = IndexKey.GenKeyStrings(obtainedValues)
+
+						fkLoc = fkDef.fkLoc
+
+						# Second pass does the validation
+						for fkString in theValues:
+							found = False
+							for checkValues in checkValuesList:
+								if fkString in checkValues:
+									found = True
+									break
+
+							if not found:
+								uniqueFailedWhere.add(fkVals.where)
+								errors.append(
+									{
+										"reason": "stale_fk",
+										"description": "Unmatching FK ({0}) in {1} to schema {2} (key {3})".format(
+											fkString,
+											fkVals.where,
+											refSchemaURI,
+											fkDef.refers_to,
+										),
+										"file": fkVals.where,
+										"path": fkPath,
+									}
+								)
 			else:
 				# For each registered foreign key of the JSON Schema
 				# referring the schema URI with the primary key
@@ -401,16 +439,17 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 					# To report there is no way to
 					# check because there is no document
 					# available
-					for fkVal in fkLoc.values:
-						uniqueWhere.add(fkVal.where)
-						uniqueFailedWhere.add(fkVal.where)
+					for fkVals in fkLoc.values:
+						uniqueWhere.add(fkVals.where)
+						uniqueFailedWhere.add(fkVals.where)
+
 						errors.append(
 							{
 								"reason": self._danglingErrorReason,
 								"description": "No available documents from {0} schema, required by {1}".format(
 									refSchemaURI, self.schemaURI
 								),
-								"file": fkVal.where,
+								"file": fkVals.where,
 								"path": fkPath,
 							}
 						)

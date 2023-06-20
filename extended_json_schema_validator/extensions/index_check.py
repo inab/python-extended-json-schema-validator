@@ -338,11 +338,16 @@ class IndexKey(AbstractCustomFeatureValidator):
 			else:
 				obtainedValues = ([value],)
 
-			isAtomicValue = (
-				len(obtainedValues) == 1
-				and len(obtainedValues[0]) == 1
-				and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
-			)
+			# We are adding another "indirection"
+			if indexDef.limit_scope:
+				obtainedValues = ([self.currentJSONFile], *obtainedValues)
+				isAtomicValue = False
+			else:
+				isAtomicValue = (
+					len(obtainedValues) == 1
+					and len(obtainedValues[0]) == 1
+					and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
+				)
 
 			theValues: "Tuple[Union[str, int, float, bool, None], ...]"
 			if isAtomicValue:
