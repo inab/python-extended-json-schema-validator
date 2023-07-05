@@ -262,6 +262,25 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 					FKVals(where=self.currentJSONFile, values=obtainedValues)
 				)
 
+	def forget(self, the_json_file: "str") -> "bool":
+		"""
+		This method "forgets" what it was gathered for the input json file.
+		This is needed when we are guessing schemas
+		"""
+		removed = False
+		for fkDefs in self.FKWorld.values():
+			for fkDef in fkDefs.values():
+				to_be_removed: "MutableSequence[FKVals]" = []
+				for fkVals in fkDef.fkLoc.values:
+					if fkVals.where == the_json_file:
+						to_be_removed.append(fkVals)
+
+				if len(to_be_removed) > 0:
+					removed = True
+					fkDef.fkLoc.values.difference_update(to_be_removed)
+
+		return removed
+
 	# Now, time to check
 	def doSecondPass(
 		self, l_customFeatureValidatorsContext: "Mapping[str, Sequence[CheckContext]]"

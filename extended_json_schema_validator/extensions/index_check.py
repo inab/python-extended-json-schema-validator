@@ -355,14 +355,35 @@ class IndexKey(AbstractCustomFeatureValidator):
 			else:
 				theValues = self.GenKeyStrings(obtainedValues)
 
-			indexSet = indexDef.values
+			indexValues = indexDef.values
 			# Should it complain about this?
 			for theValue in theValues:
 				# No error, as it is only indexing for the join_keys
-				if theValue not in indexSet:
-					indexSet[theValue] = set()
+				if theValue not in indexValues:
+					indexValues[theValue] = set()
 
-				indexSet[theValue].add(self.currentJSONFile)
+				indexValues[theValue].add(self.currentJSONFile)
+
+	def forget(self, the_json_file: "str") -> "bool":
+		"""
+		This method "forgets" what it was gathered for the input json file.
+		This is needed when we are guessing schemas
+		"""
+		removed = False
+		for indexDef in self.IndexWorld.values():
+			keys_to_free = []
+			for indexValue, indexSet in indexDef.values.items():
+				if the_json_file in indexSet:
+					if len(indexSet) > 1:
+						indexSet.remove(the_json_file)
+					else:
+						keys_to_free.append(indexValue)
+					removed = True
+			# These values are not registered any more
+			if len(keys_to_free) > 0:
+				for indexValue in keys_to_free:
+					del indexDef.values[indexValue]
+		return removed
 
 	def getContext(self) -> "Optional[CheckContext]":
 		return CheckContext(

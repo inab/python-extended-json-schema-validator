@@ -386,6 +386,9 @@ class PrimaryKey(UniqueKey):
 				else:
 					uniqueSet[theValue] = set([self.currentJSONFile])
 
+	# inherited "forget" method does not need a reimplementation
+	# because PopulatedPKWorld is not changed when a file is checked
+
 	def getContext(self) -> "Optional[CheckContext]":
 		# These are needed to assure the context is always completely populated
 		self.warmUpCaches()

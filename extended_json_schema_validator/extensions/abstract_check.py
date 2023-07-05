@@ -263,6 +263,14 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	def getContext(self) -> "Optional[CheckContext]":
 		return None
 
+	def forget(self, the_json_file: "str") -> "bool":
+		"""
+		This method "forgets" what it was gathered for the input json file.
+		This is needed when we are guessing schemas
+		"""
+
+		return False
+
 	# It should be run after all the second validation passes are run
 	# By default, it is a no-op
 	def cleanup(self) -> None:
