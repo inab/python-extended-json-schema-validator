@@ -1,0 +1,7 @@
+{
+	"@schema": "simple_fk_example/1.0",
+	"something": {
+		"ref_local_id": "tres",
+		"somedesc": "treinta"
+	}
+}
