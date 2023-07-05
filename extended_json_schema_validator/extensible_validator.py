@@ -1148,16 +1148,6 @@ class ExtensibleValidator(object):
 					for customFormatInstance in schemaObj["customFormatInstances"]:
 						customFormatInstance.setCurrentJSONFilename(jsonFile)
 
-					# Registering the dynamic validators to be cleaned up
-					# when the validator finishes the session
-					if jsonSchemaIdVal not in dynSchemaSet:
-						dynSchemaSet.add(jsonSchemaIdVal)
-						localDynSchemaVal = schemaObj["customFormatInstances"]
-						if localDynSchemaVal:
-							# We reset them, in case they were dirty
-							self._resetDynamicValidators(localDynSchemaVal)
-							dynSchemaValList.extend(localDynSchemaVal)
-
 					jsonSchema = schemaObj["schema"]
 					validator = schemaObj["validator"]
 					jsonObj["schema_hash"] = schemaObj["schema_hash"]
@@ -1206,6 +1196,11 @@ class ExtensibleValidator(object):
 					if printed_errors:
 						# Masking it for the next loop
 						numFilePass1Fail += 1
+
+						# Now, cleanup the recorded keys
+						# so they are not taken into account for the second pass
+						for customFormatInstance in schemaObj["customFormatInstances"]:
+							customFormatInstance.forget(jsonFile)
 					else:
 						# Does the schema contain a PK declaration?
 						isValid = True
@@ -1235,6 +1230,7 @@ class ExtensibleValidator(object):
 				all_errors: "MutableSequence[ValidationError]" = []
 
 				# Brute force testing all the schemas
+				schemas_tested: "MutableSequence[str]" = []
 				for schemaObj in p_schemaHash.values():
 					jsonSchemaIdVal = schemaObj["uri"]
 					# When guess_unmatched is a list restricting
@@ -1244,22 +1240,11 @@ class ExtensibleValidator(object):
 					if isinstance(guess_unmatched, list):
 						if jsonSchemaIdVal not in guess_unmatched:
 							continue
-					self.logger.log(
-						logLevel, "\t- Trying {0} schema".format(jsonSchemaIdVal)
-					)
+					self.logger.debug("\t- Trying {0} schema".format(jsonSchemaIdVal))
+					schemas_tested.append(jsonSchemaIdVal)
 
 					for customFormatInstance in schemaObj["customFormatInstances"]:
 						customFormatInstance.setCurrentJSONFilename(jsonFile)
-
-					# Registering the dynamic validators to be cleaned up
-					# when the validator finishes the session
-					if jsonSchemaIdVal not in dynSchemaSet:
-						dynSchemaSet.add(jsonSchemaIdVal)
-						localDynSchemaVal = schemaObj["customFormatInstances"]
-						if localDynSchemaVal:
-							# We reset them, in case they were dirty
-							self._resetDynamicValidators(localDynSchemaVal)
-							dynSchemaValList.extend(localDynSchemaVal)
 
 					jsonSchema = schemaObj["schema"]
 					validator = schemaObj["validator"]
@@ -1286,13 +1271,30 @@ class ExtensibleValidator(object):
 						self.logger.debug(
 							f"{jsonFile} did not validate against {jsonSchemaIdVal}"
 						)
+						# Now, cleanup the recorded keys
+						# so they are not taken into account for the second pass
+						for customFormatInstance in schemaObj["customFormatInstances"]:
+							customFormatInstance.forget(jsonFile)
 					else:
 						jsonObj["schema_hash"] = schemaObj["schema_hash"]
 						jsonObj["schema_id"] = jsonSchemaIdVal
 						all_errors = []
 						break
 
-				if len(all_errors) == 0:
+				if len(schemas_tested) == 0:
+					self.logger.log(
+						logLevel,
+						f"\t- Skipping schema validation (no one of the proposed schemas was available: {guess_unmatched})",
+					)
+					errors.append(
+						{
+							"reason": "schema_unknown",
+							"description": f"No one of the proposed schemas was available: {guess_unmatched}",
+						}
+					)
+					# Masking it for the next loop
+					numFilePass1Ignore += 1
+				elif len(all_errors) == 0:
 					self.logger.log(
 						logLevel, "\t- Guessed {0} schema".format(jsonSchemaIdVal)
 					)
@@ -1305,7 +1307,7 @@ class ExtensibleValidator(object):
 					jsonPossibles.append(jsonObj)
 				else:
 					self.logger.error(
-						f"\t- CUMULATE ({len(p_schemaHash)} schemas) ERRORS:\n"
+						f"\t- CUMULATE ({len(schemas_tested)} schemas) ERRORS:\n"
 					)
 					for valError in all_errors:
 						self.logger.error(
