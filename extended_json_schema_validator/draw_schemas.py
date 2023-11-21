@@ -360,14 +360,17 @@ def genNode(
 
 
 def drawSchemasToFile(
-	ev: "ExtensibleValidator", output_filename: str, title: str = "JSON Schemas"
+	ev: "ExtensibleValidator",
+	output_filename: str,
+	title: str = "JSON Schemas",
+	skip_schema: "Set[str]" = set(),
 ) -> int:
 	validSchemaDict = ev.getValidSchemas()
 	if len(validSchemaDict.keys()) == 0:
 		ev.logger.fatal("No schema was successfully loaded, so no drawing is possible")
 		return 1
 	with open(output_filename, mode="w", encoding="utf-8") as DOT:
-		return drawSchemasToStream(ev, DOT, title=title)
+		return drawSchemasToStream(ev, DOT, title=title, skip_schema=skip_schema)
 
 
 def schemaPath2JSONPath(schemaPath: str) -> str:
@@ -394,7 +397,9 @@ def schemaPath2JSONPath(schemaPath: str) -> str:
 	return jpath
 
 
-def drawSchemasToStream(ev: "ExtensibleValidator", DOT: "IO[str]", title: str) -> int:
+def drawSchemasToStream(
+	ev: "ExtensibleValidator", DOT: "IO[str]", title: str, skip_schema: "Set[str]"
+) -> int:
 	validSchemaDict = ev.getValidSchemas(do_resolve=True)
 	refSchemaSet = ev.getRefSchemaSet()
 	# Now it is time to draw the schemas themselves
@@ -413,6 +418,8 @@ digraph schemas {{
 	sHash = dict()
 
 	for jsonSchemaURI, schemaObj in validSchemaDict.items():
+		if jsonSchemaURI in skip_schema:
+			continue
 		resolved_schema = schemaObj["resolved_schema"]
 
 		for prop_name in ("properties", "allOf", "oneOf", "someOf"):
@@ -447,6 +454,12 @@ digraph schemas {{
 			if the_id == ForeignKey.KeyAttributeNameFK:
 				# TO FINISH
 				for featureLoc in featureLocs:
+					# There are false positives, but right now
+					# I cannot see how to distinguish from real,
+					# existing features (sigh)
+					# if featureLoc.schemaURI != jsonSchemaURI:
+					# 	logging.error(f"Skipped feature {featureLoc.schemaURI} != {jsonSchemaURI} {the_id} {featureLoc}")
+					# 	continue
 					for fk_decl in featureLoc.context[ForeignKey.KeyAttributeNameFK]:
 						ref_schema_id = fk_decl.get("schema_id")
 						if ref_schema_id is None:

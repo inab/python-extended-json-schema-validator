@@ -340,7 +340,13 @@ def main() -> None:
 	if args.dotReport is not None:
 		from .draw_schemas import drawSchemasToFile
 
-		drawSchemasToFile(ev, args.dotReport[0], title=args.dotReport[1])
+		commonprefix = os.path.commonprefix(list(ev.getValidSchemas().keys()))
+		drawSchemasToFile(
+			ev,
+			args.dotReport[0],
+			title=args.dotReport[1],
+			skip_schema=set([commonprefix]),
+		)
 
 	if len(sys.argv) > 2:
 		numSchemas = len(ev.getValidSchemas().keys())
