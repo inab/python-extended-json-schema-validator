@@ -393,7 +393,10 @@ class IndexKey(AbstractCustomFeatureValidator):
 	def getContext(self) -> "Optional[CheckContext]":
 		return CheckContext(
 			schemaURI=self.schemaURI,
-			context=IndexContext(self.IndexWorld, self.IndexWorldByName),
+			context=IndexContext(
+				index_world=self.IndexWorld,
+				index_world_by_name=self.IndexWorldByName,
+			),
 		)
 
 	def cleanup(self) -> None:
