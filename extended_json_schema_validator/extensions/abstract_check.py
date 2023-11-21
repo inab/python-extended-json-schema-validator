@@ -9,7 +9,7 @@ import shutil
 import tempfile
 from typing import TYPE_CHECKING, NamedTuple, cast
 
-import xdg  # type: ignore[import]
+import xdg.BaseDirectory
 
 import jsonschema as JSV
 

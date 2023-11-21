@@ -1,4 +1,5 @@
 typing-extensions
 types-jsonschema
+types-pyxdg
 types-setuptools
 types-pyyaml
