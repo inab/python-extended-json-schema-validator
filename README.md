@@ -106,6 +106,7 @@ If your JSON schemas are properly defined, but you are fixing issues in a set of
 ```bash
 git clone https://github.com/inab/benchmarking-data-model
 EDITOR="geany -i" python jsonValidate.py --fix benchmarking-data-model/json-schemas/1.0.x benchmarking-data-model/prototype-data/1.0.x/QfO-fail
+```
 
 And this is an asciinema (to be updated) recording a previous version of FAIRTracks Validator:
 
