@@ -799,7 +799,7 @@ class ExtensibleValidator(object):
 		# First, gather the list of contexts
 		gatheredContexts: "MutableMapping[str, MutableSequence[CheckContext]]" = {}
 		for dynVal in dynValList:
-			dynContext = dynVal.getContext()
+			dynContext = dynVal.getCachedContext()
 			if dynContext is not None:
 				gatheredContexts.setdefault(dynVal.__class__.__name__, []).append(
 					dynContext

@@ -103,6 +103,7 @@ class AbstractCustomFeatureValidator(abc.ABC):
 		self.isRW = isRW
 		self.bootstrapMessages = None
 		self.currentJSONFile = "(unset)"
+		self._context: "Optional[CheckContext]" = None
 
 	CacheSubdir: "ClassVar[Optional[str]]" = None
 	CachePathProp: "ClassVar[Optional[str]]" = None
@@ -263,6 +264,12 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	def getContext(self) -> "Optional[CheckContext]":
 		return None
 
+	def getCachedContext(self) -> "Optional[CheckContext]":
+		if self._context is None:
+			self._context = self.getContext()  # pylint: disable=assignment-from-none
+
+		return self._context
+
 	def forget(self, the_json_file: "str") -> "bool":
 		"""
 		This method "forgets" what it was gathered for the input json file.
@@ -274,4 +281,4 @@ class AbstractCustomFeatureValidator(abc.ABC):
 	# It should be run after all the second validation passes are run
 	# By default, it is a no-op
 	def cleanup(self) -> None:
-		pass
+		self._context = None
