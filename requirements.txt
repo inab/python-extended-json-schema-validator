@@ -1,7 +1,8 @@
 # With 'format-nongpl' several optional formats
 # are supported through additional libraries
 ijson
-jsonschema[format-nongpl] >= 3.0.0 , < 4.18.0
+jsonschema[format-nongpl] >= 3.0.0 , < 4.18.0 ; python_version < '3.8'
+jsonschema[format-nongpl] >= 3.0.0 ; python_version >= '3.8'
 jsonpath_ng
 uritools
 pyyaml
