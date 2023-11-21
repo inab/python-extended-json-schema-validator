@@ -317,13 +317,14 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 
 						if pkKeys is not None:
 							if pkDef.name in pkKeys.by_name:
-								self.logger.debug(
-									f"Repeated primary key '{pkDef.name}'. Be prepared for foreign key hairy responses."
-								)
+								if id(pkDef) != id(pkKeys.by_name[pkDef.name]):
+									self.logger.debug(
+										f"Repeated primary key '{pkDef.name}' at {pkLoc.schemaURI}. Be prepared for foreign key hairy responses from {self.schemaURI}."
+									)
 							else:
 								pkKeys.by_name[pkDef.name] = pkDef
-						else:
-							self.logger.debug(f"Unhandled PK to {pkLoc.schemaURI}")
+						# else:
+						# 	self.logger.debug(f"[{id(pkContext.context.index_world)}] PK {pkLoc.schemaURI} is not referred from {self.schemaURI}. Skipping")
 
 		# Now, at last, check!!!!!!!
 		uniqueWhere: "MutableSet[str]" = set()
@@ -437,11 +438,13 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 								errors.append(
 									{
 										"reason": "stale_fk",
-										"description": "Unmatching FK ({0}) in {1} to schema {2} (key {3})".format(
+										"description": "Unmatching FK ({0}) in {1} to schema {2} ({3})".format(
 											fkString,
 											fkVals.where,
 											refSchemaURI,
-											fkDef.refers_to,
+											"any primary key"
+											if fkDef.refers_to is None
+											else "primary key " + fkDef.refers_to,
 										),
 										"file": fkVals.where,
 										"path": fkPath,
