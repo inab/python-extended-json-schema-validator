@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import copy
+import logging
 import urllib.error
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urljoin, urlparse
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 		MutableMapping,
 		Optional,
 		Sequence,
+		Set,
 		Tuple,
 		Union,
 	)
@@ -37,6 +39,11 @@ if TYPE_CHECKING:
 
 	from .abstract_check import FeatureValidatorConfig
 
+	from .index_check import (
+		IndexWorldType,
+		IndexWorldByNameType,
+	)
+
 	InlineAtomicPKVal = Union[bool, int, float, str, None]
 	InlinePKVal = Union[InlineAtomicPKVal, Mapping[str, Any], Sequence[Any]]
 
@@ -45,6 +52,7 @@ if TYPE_CHECKING:
 		accept: str
 		provider: Union[str, Sequence[str]]
 		inline_provider: Mapping[str, Sequence[InlinePKVal]]
+		allow_provider_duplicates: bool
 
 
 class PrimaryKey(UniqueKey):
@@ -60,11 +68,21 @@ class PrimaryKey(UniqueKey):
 		isRW: bool = True,
 	):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
-		self.doPopulate = False
+		self.doPopulate: "Optional[Set[int]]" = None
 		self.gotIdsSet: "Optional[MutableMapping[str, Sequence[InlinePKVal]]]" = None
 		self.warmedUp = False
-		self.PopulatedPKWorld: "MutableMapping[int, IndexDef]" = dict()
-		self.PopulatedPKWorldByName: "MutableMapping[str, IndexDef]" = dict()
+		self.PopulatedPKWorld: "IndexWorldType" = dict()
+		self.PopulatedPKWorldByName: "IndexWorldByNameType" = dict()
+
+		# The common dictionary for this declaration where all the unique values are kept
+		self._setup = cast(
+			"Optional[PKConfigDict]", self.config.get(self.triggerAttribute)
+		)
+		self._allow_provider_duplicates = (
+			False
+			if self._setup is None
+			else self._setup.get("allow_provider_duplicates", False)
+		)
 
 	@property
 	def triggerAttribute(self) -> str:
@@ -126,10 +144,8 @@ class PrimaryKey(UniqueKey):
 		if not self.warmedUp:
 			self.warmedUp = True
 
-			setup = cast(
-				"Optional[PKConfigDict]", self.config.get(self.triggerAttribute)
-			)
-			if setup is not None:
+			if self._setup is not None:
+				setup = self._setup
 				# The provided inline list of ids
 				schema2id = setup.get("inline_provider", {})
 				gotIds = schema2id.get(self.schemaURI)
@@ -168,7 +184,7 @@ class PrimaryKey(UniqueKey):
 									)
 									if gotIds:
 										self.gotIdsSet[compURL] = gotIds
-										self.doPopulate = True
+										self.doPopulate = set()
 						except urllib.error.HTTPError as he:
 							self.logger.error(
 								"ERROR: Unable to fetch remote keys data from {0} [{1}]: {2}".format(
@@ -189,59 +205,43 @@ class PrimaryKey(UniqueKey):
 
 	def doDefaultPopulation(
 		self,
-		unique_id: int = -1,
-		unique_members: "Union[bool, Sequence[str]]" = [],
-		unique_name: "Optional[str]" = None,
+		unique_def: "IndexDef",
+		unique_id: "int",
+		is_validating: "bool",
 	) -> None:
-		if self.doPopulate:
+		if self.doPopulate is not None and unique_id not in self.doPopulate:
 			# Deactivate future populations
-			self.doPopulate = False
+			# if a custom unique_world is not provided
+			self.doPopulate.add(unique_id)
 
 			if self.gotIdsSet:
-				# The common dictionary for this declaration where all the unique values are kept
-				allow_provider_duplicates = self.config.get(
-					self.triggerAttribute, {}
-				).get(
-					"allow_provider_duplicates", False
-				)
-				if allow_provider_duplicates:
-					UniqueWorld = self.PopulatedPKWorld
-					UniqueWorldByName = self.PopulatedPKWorldByName
-				else:
-					UniqueWorld = self.IndexWorld
-					UniqueWorldByName = self.IndexWorldByName
-
-				uniqueDef = UniqueWorld.get(unique_id)
-				if uniqueDef is None:
-					# Assigning a random name
-					if unique_name is None:
-						unique_name = f"{self.randomKeyPrefix}_{unique_id}"
-					uniqueDef = UniqueWorld.setdefault(
-						unique_id,
-						IndexDef(
-							indexLoc=IndexLoc(
-								schemaURI=self.schemaURI, path="(unknown)"
-							),
-							members=unique_members,
-							name=unique_name,
-							limit_scope=False,
+				if self._allow_provider_duplicates and is_validating:
+					new_unique_def = self.PopulatedPKWorld.get(unique_id)
+					# Do we have a shadow definition where to store?
+					if new_unique_def is None:
+						new_unique_def = IndexDef(
+							indexLoc=unique_def.indexLoc,
+							members=unique_def.members,
 							values=dict(),
-						),
-					)
-					UniqueWorld[unique_id] = uniqueDef
-					if unique_name in UniqueWorldByName:
-						self.logger.warning(
-							f"Repeated named {self.randomKeyPrefix} '{unique_name}'. Be prepared for hairy responses."
+							name=unique_def.name,
+							limit_scope=unique_def.limit_scope,
 						)
-					else:
-						UniqueWorldByName[unique_name] = uniqueDef
-				uniqueSet = uniqueDef.values
+
+						self.PopulatedPKWorld[unique_id] = new_unique_def
+						self.PopulatedPKWorldByName[
+							new_unique_def.name
+						] = new_unique_def
+
+					# Last, replace the unique_def
+					unique_def = new_unique_def
+
+				uniqueSet = unique_def.values
 
 				# Should it complain about this?
 				for compURL, gotIds in self.gotIdsSet.items():
 					collision_urls = set()
 					for theValue in gotIds:
-						if uniqueDef.limit_scope:
+						if unique_def.limit_scope:
 							isAtomicValue = False
 							if isinstance(theValue, (list, tuple)):
 								theValue = [compURL, *theValue]
@@ -276,16 +276,16 @@ class PrimaryKey(UniqueKey):
 						if (other_compURL is not None) and (
 							compURL not in other_compURL
 						):
-							if allow_provider_duplicates:
+							if self._allow_provider_duplicates:
 								collision_urls.update(other_compURL)
 							else:
 								raise ValidationError(
 									"Duplicated {0} value from {1} for PK {2} -=> {3} <=-  (got from {4}, appeared in {5})".format(
 										self.triggerAttribute,
 										compURL,
-										uniqueDef.name,
+										unique_def.name,
 										key_string,
-										uniqueDef.members,
+										unique_def.members,
 										other_compURL,
 									),
 									validator_value={"reason": self._errorReason},
@@ -294,8 +294,9 @@ class PrimaryKey(UniqueKey):
 							uniqueSet[key_string] = set([compURL])
 
 					if len(collision_urls) > 0:
-						self.logger.warning(
-							f"Public keys from {compURL} collided with public keys from {', '.join(collision_urls)}"
+						self.logger.log(
+							logging.DEBUG - 1,
+							f"Public keys from {compURL} collided with public keys from {', '.join(collision_urls)}",
 						)
 
 	def validate(
@@ -338,11 +339,17 @@ class PrimaryKey(UniqueKey):
 					),
 				)
 				self.IndexWorld[unique_id] = uniqueDef
+				if unique_name in self.IndexWorldByName:
+					self.logger.warning(
+						f"Repeated named {self.randomKeyPrefix} '{unique_name}'. Be prepared for hairy responses."
+					)
+				else:
+					self.IndexWorldByName[unique_name] = uniqueDef
 
 			self.doDefaultPopulation(
+				unique_def=uniqueDef,
 				unique_id=unique_id,
-				unique_members=uniqueDef.members,
-				unique_name=uniqueDef.name,
+				is_validating=True,
 			)
 
 			if isinstance(uniqueDef.members, list):
@@ -392,7 +399,6 @@ class PrimaryKey(UniqueKey):
 	def getContext(self) -> "Optional[CheckContext]":
 		# These are needed to assure the context is always completely populated
 		self.warmUpCaches()
-		self.doDefaultPopulation()
 
 		if len(self.PopulatedPKWorld) > 0:
 			ConsolidatedUniqueWorld = copy.copy(self.PopulatedPKWorld)
@@ -400,37 +406,50 @@ class PrimaryKey(UniqueKey):
 
 			for unique_id, uniqueDef in self.IndexWorld.items():
 				baseUniqueDef = ConsolidatedUniqueWorld.get(unique_id)
+
+				# This copy is to isolate
 				if baseUniqueDef is None:
-					newUniqueDef = uniqueDef
+					baseUniqueDef = uniqueDef
+					newUniqueSet = copy.copy(uniqueDef.values)
 				else:
 					newUniqueSet = copy.copy(baseUniqueDef.values)
 					newUniqueSet.update(uniqueDef.values)
-					newUniqueDef = IndexDef(
-						indexLoc=baseUniqueDef.indexLoc,
-						members=baseUniqueDef.members,
-						name=baseUniqueDef.name,
-						limit_scope=baseUniqueDef.limit_scope,
-						values=newUniqueSet,
-					)
+
+				newUniqueDef = IndexDef(
+					indexLoc=baseUniqueDef.indexLoc,
+					members=baseUniqueDef.members,
+					name=baseUniqueDef.name,
+					limit_scope=baseUniqueDef.limit_scope,
+					values=newUniqueSet,
+				)
 				ConsolidatedUniqueWorld[unique_id] = newUniqueDef
 				ConsolidatedUniqueWorldByName[uniqueDef.name] = newUniqueDef
 		else:
 			ConsolidatedUniqueWorld = self.IndexWorld
 			ConsolidatedUniqueWorldByName = self.IndexWorldByName
 
+		# Last, but not the least important
+		for unique_id, uniqueDef in ConsolidatedUniqueWorld.items():
+			self.doDefaultPopulation(
+				unique_def=uniqueDef,
+				unique_id=unique_id,
+				is_validating=False,
+			)
+
 		return CheckContext(
 			schemaURI=self.schemaURI,
 			context=IndexContext(
-				ConsolidatedUniqueWorld, ConsolidatedUniqueWorldByName
+				index_world=ConsolidatedUniqueWorld,
+				index_world_by_name=ConsolidatedUniqueWorldByName,
 			),
 		)
 
 	def invalidateCaches(self) -> None:
 		self.warmedUp = False
-		self.doPopulate = False
+		self.doPopulate = None
 		self.gotIdsSet = None
 
 	def cleanup(self) -> None:
 		super().cleanup()
 		if self.warmedUp:
-			self.doPopulate = True
+			self.doPopulate = set()
