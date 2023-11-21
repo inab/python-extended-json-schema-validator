@@ -53,9 +53,14 @@ class IndexDef(NamedTuple):
 	limit_scope: bool = False
 
 
+if TYPE_CHECKING:
+	IndexWorldType = MutableMapping[int, IndexDef]
+	IndexWorldByNameType = MutableMapping[str, IndexDef]
+
+
 class IndexContext(NamedTuple):
-	index_world: "MutableMapping[int, IndexDef]"
-	index_world_by_name: "MutableMapping[str, IndexDef]"
+	index_world: "IndexWorldType"
+	index_world_by_name: "IndexWorldByNameType"
 
 
 class IndexKey(AbstractCustomFeatureValidator):
@@ -71,8 +76,8 @@ class IndexKey(AbstractCustomFeatureValidator):
 		isRW: bool = True,
 	):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
-		self.IndexWorld: "MutableMapping[int, IndexDef]" = dict()
-		self.IndexWorldByName: "MutableMapping[str, IndexDef]" = dict()
+		self.IndexWorld: "IndexWorldType" = dict()
+		self.IndexWorldByName: "IndexWorldByNameType" = dict()
 
 	@property
 	def triggerAttribute(self) -> str:
