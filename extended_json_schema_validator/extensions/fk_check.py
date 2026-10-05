@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import abc
+import dataclasses
 import json
 
 from typing import TYPE_CHECKING, NamedTuple, cast
@@ -74,10 +75,11 @@ class FKDef(NamedTuple):
 	refers_to: "Optional[str]"
 
 
-class PKKeys(NamedTuple):
+@dataclasses.dataclass
+class PKKeys:
 	schemaURI: str
-	vals: "MutableSequence[IndexedValues]" = []
-	by_name: "MutableMapping[str, IndexDef]" = {}
+	vals: "MutableSequence[IndexedValues]" = dataclasses.field(default_factory=list)
+	by_name: "MutableMapping[str, IndexDef]" = dataclasses.field(default_factory=dict)
 	limit_scope: "bool" = False
 
 
@@ -88,7 +90,7 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 		schemaURI: str,
 		joinClass: "Type[IndexKey]",
 		jsonSchemaSource: str = "(unknown)",
-		config: "FeatureValidatorConfig" = {},
+		config: "Optional[FeatureValidatorConfig]" = None,
 		isRW: bool = True,
 	):
 		super().__init__(
@@ -338,7 +340,7 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 			if checkValuesKeys is not None:
 				# For each registered foreign key of the JSON Schema
 				# referring the schema URI with the primary key
-				for fk_loc_id, fkDef in fkDefH.items():
+				for fk_loc_id, fkDef in fkDefH.items():  # noqa: PERF102
 					# Get the details of the foreign key
 					fkLoc = fkDef.fkLoc
 					fkPath = fkLoc.path
@@ -453,7 +455,7 @@ class AbstractRefKey(AbstractCustomFeatureValidator):
 			else:
 				# For each registered foreign key of the JSON Schema
 				# referring the schema URI with the primary key
-				for fk_loc_id, fkDef in fkDefH.items():
+				for fk_loc_id, fkDef in fkDefH.items():  # noqa: PERF102
 					# Get the details of the foreign key
 					fkLoc = fkDef.fkLoc
 					fkPath = fkLoc.path
@@ -499,7 +501,7 @@ class ForeignKey(AbstractRefKey):
 		self,
 		schemaURI: str,
 		jsonSchemaSource: str = "(unknown)",
-		config: "FeatureValidatorConfig" = {},
+		config: "Optional[FeatureValidatorConfig]" = None,
 		isRW: bool = True,
 	):
 		super().__init__(

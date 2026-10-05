@@ -64,10 +64,12 @@ class PrimaryKey(UniqueKey):
 		self,
 		schemaURI: str,
 		jsonSchemaSource: str = "(unknown)",
-		config: "FeatureValidatorConfig" = {},
+		config: "Optional[FeatureValidatorConfig]" = None,
 		isRW: bool = True,
 	):
-		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
+		super().__init__(
+			schemaURI, jsonSchemaSource=jsonSchemaSource, config=config, isRW=isRW
+		)
 		self.doPopulate: "Optional[Set[int]]" = None
 		self.gotIdsSet: "Optional[MutableMapping[str, Sequence[InlinePKVal]]]" = None
 		self.warmedUp = False
@@ -197,7 +199,7 @@ class PrimaryKey(UniqueKey):
 									compURL, ue.reason
 								)
 							)
-						except:
+						except BaseException:
 							self.logger.exception(
 								"ERROR: Unable to parse remote keys data from "
 								+ compURL
@@ -228,9 +230,9 @@ class PrimaryKey(UniqueKey):
 						)
 
 						self.PopulatedPKWorld[unique_id] = new_unique_def
-						self.PopulatedPKWorldByName[
-							new_unique_def.name
-						] = new_unique_def
+						self.PopulatedPKWorldByName[new_unique_def.name] = (
+							new_unique_def
+						)
 
 					# Last, replace the unique_def
 					unique_def = new_unique_def

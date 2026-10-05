@@ -1,6 +1,24 @@
 fail_fast: true
 
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      # This one has been added to fail fast on syntax errors
+      # before running expensive pylint
+      - id: check-ast
+        types: [file]
+        files: \.(py|pyi)$
+        exclude: "/(site-packages|development-[^/]*|docs|node_modules|__pycache__|\\..*)/$"
+      - id: check-json
+      - id: check-toml
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.16.10
+    hooks:
+      # Run the linter.
+      - id: ruff-check
+        name: Ruff check
   - repo: local
     hooks:
       - id: pylint
@@ -9,18 +27,20 @@ repos:
         require_serial: true
         types:
           - python
-        exclude: "^[^/]*env/|dev-[^/]*/"
+        exclude: "/(site-packages|development-[^/]*|docs|node_modules|__pycache__|\\..*)/$"
         entry: pylint -j 0
+        args: [--source-roots, .]
       - id: mypy
         name: Local MyPy
         language: system
         types:
           - python
 #        files: \.py$
-        exclude: "^[^/]*env/|dev-[^/]*/"
+        exclude: "/(site-packages|development-[^/]*|docs|node_modules|__pycache__|\\..*)/$"
         require_serial: true
 #        entry: ./basic-installer.bash mypy --strict
-        entry: mypy --strict --show-error-codes --no-warn-unused-ignores
+        entry: mypy
+        args: [--strict, --show-error-codes, --no-warn-unused-ignores]
 
 #  - repo: https://github.com/PyCQA/pylint
 #    rev: v2.15.2
@@ -28,17 +48,23 @@ repos:
 #      - id: pylint
 #        args: [ -j, "0", --disable=all, --enable=unused-import]
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.16.10
+    hooks:
+      # Run the formatter check in fix mode.
+      - id: ruff-format
+        name: Ruff format (fix)
+        stages: [manual]
+      # Run the formatter checks.
+      - id: ruff-format
+        name: Ruff format (check)
+        args: [ "--diff" ]
+
   - repo: https://github.com/jmfernandez/pre-commit_mirrors-actionlint.git
     rev: v1.6.23
     hooks:
       - id: actionlint
-
-  - repo: https://github.com/jmfernandez/pre-commit_mirrors-tan
-    rev: v23.3.0
-    hooks:
-      - id: tan
-        exclude: "^[^/]*env/|dev-[^/]*/"
-        args: [--diff, --check, --use-tabs]
 
 #  - repo: local
 #    hooks:

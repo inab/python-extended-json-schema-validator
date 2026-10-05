@@ -20,10 +20,9 @@ if TYPE_CHECKING:
 		Mapping,
 		MutableMapping,
 		MutableSequence,
-		MutableSet,
 		Optional,
-		Protocol,
 		Sequence,
+		Set,
 		Tuple,
 		Type,
 		Union,
@@ -50,8 +49,9 @@ module_logger = logging.getLogger(__name__)
 INTROSPECT_VALIDATOR_MAPPER: "Mapping[str, Type[JSV.validators._Validator]]" = {
 	j_valid.META_SCHEMA["$schema"]: cast("Type[JSV.validators._Validator]", j_valid)
 	for j_valid in filter(
-		lambda j_val: hasattr(j_val, "META_SCHEMA")
-		and isinstance(j_val.META_SCHEMA, dict),
+		lambda j_val: (
+			hasattr(j_val, "META_SCHEMA") and isinstance(j_val.META_SCHEMA, dict)
+		),
 		JSV.validators.__dict__.values(),
 	)
 }
@@ -60,7 +60,7 @@ PLAIN_VALIDATOR_MAPPER: "Mapping[str, Type[JSV.validators._Validator]]" = {
 	"http://json-schema.org/draft-04/hyper-schema#": JSV.validators.Draft4Validator,
 	"http://json-schema.org/draft-06/hyper-schema#": JSV.validators.Draft4Validator,
 	"http://json-schema.org/draft-07/hyper-schema#": JSV.validators.Draft7Validator,
-	**INTROSPECT_VALIDATOR_MAPPER  # fmt: skip
+	**INTROSPECT_VALIDATOR_MAPPER,
 }
 
 # This method returns both the extended Validator instance and the dynamic validators
@@ -72,12 +72,15 @@ def extendValidator(
 	validator: "Type[JSV.validators._Validator]",
 	inputCustomTypes: "Mapping[str, CustomTypeCheckerCallable]",
 	inputCustomValidators: "Mapping[Optional[str], Union[ValidateCallable, Sequence[Type[AbstractCustomFeatureValidator]]]]",
-	config: "Mapping[str, Any]" = {},
+	config: "Optional[Mapping[str, Any]]" = None,
 	jsonSchemaSource: str = "(unknown)",
 	isRW: bool = True,
 ) -> "Tuple[Type[JSV.validators._Validator], Sequence[AbstractCustomFeatureValidator]]":
 	extendedValidators = validator.VALIDATORS.copy()
 	customValidatorsInstances = []
+
+	if config is None:
+		config = dict()
 
 	# Validators which must be instantiated
 	instancedCustomValidators: "Mapping[str, ValidateCallable]"
@@ -128,7 +131,7 @@ def extendValidator(
 	extendedChecker = validator.TYPE_CHECKER.redefine_many(inputCustomTypes)
 
 	return (
-		JSV.validators.extend(
+		JSV.validators.extend(  # type: ignore[no-untyped-call]
 			validator, validators=extendedValidators, type_checker=extendedChecker
 		),
 		customValidatorsInstances,
@@ -142,10 +145,14 @@ REF_FEATURE = "$ref"
 def traverseJSONSchema(
 	jsonObj: "Any",
 	schemaURI: "Optional[str]" = None,
-	keys: "Mapping[str, AbstractCustomFeatureValidator]" = {},
+	keys: "Optional[Mapping[str, AbstractCustomFeatureValidator]]" = None,
 	fragment: "Optional[str]" = None,
-	refSchemaListSet: "RefSchemaListSet" = {},
+	refSchemaListSet: "Optional[RefSchemaListSet]" = None,
 ) -> "Optional[RefSchemaListSet]":
+	if keys is None:
+		keys = dict()
+	if refSchemaListSet is None:
+		refSchemaListSet = dict()
 	# Should we try getting it?
 	if schemaURI is None:
 		if isinstance(jsonObj, dict):
@@ -209,6 +216,7 @@ def traverseJSONSchema(
 				newSchemaURI, uriFragment = uritools.uridefrag(newPartialSchemaURI)
 		else:
 			newSchemaURI = schemaURI
+			uriFragment = fragment
 
 		# Are we jumping to a different place?
 		if newSchemaURI == schemaURI:
@@ -351,7 +359,7 @@ def flattenTraverseListSet(
 				keyRefs[kr_k] = unique_feats
 
 	# list of unique ids truly unique
-	for i2e_k, featDict in id2ElemId.items():
+	for featDict in id2ElemId.values():
 		for featName, l_uniqId in featDict.items():
 			len_l_uniqId = len(l_uniqId)
 			if len_l_uniqId > 1:
@@ -406,7 +414,7 @@ def export_resolved_references(
 	contextSchemaURI: "str",
 	schema: "Any",
 	schemaHash: "MutableMapping[str, SchemaHashEntry]",
-	resolved: "MutableSet[str]" = set(),
+	resolved: "Optional[Set[str]]" = None,
 ) -> "Any":
 	"""
 	Resolves json references and merges them into a consolidated schema for validation purposes.
@@ -432,14 +440,19 @@ def export_resolved_references(
 				ref_schema = refResolver_resolve(refResolver, value)
 				if ref_schema:
 					# return ref_schema[1]
-					if contextSchemaURI in resolved:
+					if resolved is not None and contextSchemaURI in resolved:
 						print(f"RECURSION DETECTED {contextSchemaURI} {ref_schema[1]}")
 						return ref_schema[1]
 
-					resolved = set(resolved)
-					resolved.add(contextSchemaURI)
+					augmented_resolved = (
+						set(resolved) if resolved is not None else set()
+					)
+					augmented_resolved.add(contextSchemaURI)
 					return export_resolved_references(
-						ref_schema[0], ref_schema[1], schemaHash, resolved
+						ref_schema[0],
+						ref_schema[1],
+						schemaHash,
+						resolved=augmented_resolved,
 					)
 				else:
 					raise Exception(
@@ -448,7 +461,7 @@ def export_resolved_references(
 
 			# When key is not "$ref"
 			resolved_ref = export_resolved_references(
-				contextSchemaURI, value, schemaHash, resolved
+				contextSchemaURI, value, schemaHash, resolved=resolved
 			)
 			if resolved_ref and resolved_ref != value:
 				if pending_copy:
@@ -459,7 +472,7 @@ def export_resolved_references(
 	elif isinstance(schema, list):
 		for idx, value in enumerate(schema):
 			resolved_ref = export_resolved_references(
-				contextSchemaURI, value, schemaHash, resolved
+				contextSchemaURI, value, schemaHash, resolved=resolved
 			)
 			if resolved_ref and resolved_ref != value:
 				if pending_copy:

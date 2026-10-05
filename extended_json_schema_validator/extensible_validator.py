@@ -52,7 +52,12 @@ if TYPE_CHECKING:
 		Union,
 	)
 
-	from typing_extensions import Protocol, TypedDict, runtime_checkable
+	from typing_extensions import (
+		Final,
+		Protocol,
+		TypedDict,
+		runtime_checkable,
+	)
 
 	from jsonschema.exceptions import ValidationError
 
@@ -105,25 +110,39 @@ class LoadedSchemasStats(NamedTuple):
 	numSchemaInconsistent: int = 0
 
 
-class ExtensibleValidator(object):
-	CustomBaseValidators: "ClassVar[Mapping[Optional[str], Sequence[Type[AbstractCustomFeatureValidator]]]]" = {
-		None: [IndexKey, UniqueKey, PrimaryKey, JoinKey, ForeignKey]
-	}
+class ExtensibleValidator:
+	CustomBaseValidators = cast(
+		"ClassVar[Mapping[Optional[str], Sequence[Type[AbstractCustomFeatureValidator]]]]",
+		{None: [IndexKey, UniqueKey, PrimaryKey, JoinKey, ForeignKey]},
+	)
 
-	SCHEMA_KEY = "$schema"
-	ALT_SCHEMA_KEYS: "Sequence[str]" = ["@schema", "_schema", SCHEMA_KEY]
-	DEFAULT_SCHEMA_KEY_JP: "str" = '"' + '"|"'.join(ALT_SCHEMA_KEYS) + '"'
+	SCHEMA_KEY: "Final[str]" = "$schema"
+	ALT_SCHEMA_KEYS: "Final[Sequence[str]]" = ("@schema", "_schema", SCHEMA_KEY)
+	DEFAULT_SCHEMA_KEY_JP: "Final[str]" = '"' + '"|"'.join(ALT_SCHEMA_KEYS) + '"'
 
 	def __init__(
 		self,
-		customFormats: "Sequence[CustomFormatProtocol]" = [],
-		customTypes: "Mapping[str, CustomTypeCheckerCallable]" = {},
-		customValidators: "Mapping[Optional[str], Sequence[Type[AbstractCustomFeatureValidator]]]" = CustomBaseValidators,
-		config: "ExtensibleValidatorConfig" = {},
+		customFormats: "Optional[Sequence[CustomFormatProtocol]]" = None,
+		customTypes: "Optional[Mapping[str, CustomTypeCheckerCallable]]" = None,
+		customValidators: "Optional[Mapping[Optional[str], Sequence[Type[AbstractCustomFeatureValidator]]]]" = None,
+		config: "Optional[ExtensibleValidatorConfig]" = None,
 		jsonRootTag: "Optional[str]" = None,
 		isRW: bool = True,
 	):
 		self.logger = logging.getLogger(self.__class__.__name__)
+
+		# Assigning default values
+		if customFormats is None:
+			customFormats = list()
+
+		if customTypes is None:
+			customTypes = dict()
+
+		if customValidators is None:
+			customValidators = self.CustomBaseValidators
+
+		if config is None:
+			config = dict()
 
 		self.schemaHash: "MutableMapping[str, SchemaHashEntry]" = {}
 		self.refSchemaCache: "JsonPointer2Val" = {}
@@ -148,11 +167,16 @@ class ExtensibleValidator(object):
 		self,
 		args: "Sequence[Union[str, SchemaHashEntry]]",
 		logLevel: int = logging.DEBUG,
-		refSchemaCache: "JsonPointer2Val" = {},
-		anonymousSchemas: "Set[str]" = set(),
-	) -> (
-		"Tuple[Sequence[SchemaHashEntry], JsonPointer2Val, Set[str], LoadedSchemasStats]"
-	):
+		refSchemaCache: "Optional[JsonPointer2Val]" = None,
+		anonymousSchemas: "Optional[Set[str]]" = None,
+	) -> "Tuple[Sequence[SchemaHashEntry], JsonPointer2Val, Set[str], LoadedSchemasStats]":
+		# Assigning default values
+		if refSchemaCache is None:
+			refSchemaCache = dict()
+
+		if anonymousSchemas is None:
+			anonymousSchemas = set()
+
 		# Schema validation stats
 		numDirOK = 0
 		numDirFail = 0
@@ -218,10 +242,10 @@ class ExtensibleValidator(object):
 						):
 							jsonSchemaPossibles.append(newJsonSchemaFile)
 					numDirOK += 1
-				except IOError as ioe:
+				except OSError as ose:
 					self.logger.critical(
 						"FATAL ERROR: Unable to open JSON schema directory {0}. Reason: {1}".format(
-							jsonSchemaDir, ioe.strerror
+							jsonSchemaDir, ose.strerror
 						)
 					)
 					numDirFail += 1
@@ -250,10 +274,10 @@ class ExtensibleValidator(object):
 								)
 								numFileFail += 1
 								continue
-				except IOError as ioe:
+				except OSError as ose:
 					self.logger.critical(
 						"FATAL ERROR: Unable to open/read schema file {0}. Reason: {1}".format(
-							jsonSchemaFile, ioe.strerror
+							jsonSchemaFile, ose.strerror
 						)
 					)
 					numFileFail += 1
@@ -455,9 +479,7 @@ class ExtensibleValidator(object):
 			printed_errors = False
 			for valError in validator(
 				metaSchema, resolver=cachedSchemasResolver
-			).iter_errors(
-				jsonSchema
-			):
+			).iter_errors(jsonSchema):
 				if not printed_errors:
 					self.logger.error("\t- ERRORS:\n")
 				printed_errors = True
@@ -504,9 +526,7 @@ class ExtensibleValidator(object):
 					self.logger.log(logLevel, "\t- Validated {0}".format(jsonSchemaURI))
 
 					# Reverse mappings, needed later
-					triggeringFeatures: "MutableMapping[str, AbstractCustomFeatureValidator]" = (
-						{}
-					)
+					triggeringFeatures: "MutableMapping[str, AbstractCustomFeatureValidator]" = {}
 					for cFI in customFormatInstances:
 						for triggerAttribute, _ in cFI.getValidators():
 							triggeringFeatures[triggerAttribute] = cFI
@@ -736,7 +756,7 @@ class ExtensibleValidator(object):
 	def loadJSONSchemas(
 		self, *args: "Union[str, SchemaHashEntry]", verbose: "Optional[bool]" = None
 	) -> int:
-		l_stats = self.loadJSONSchemasExt(verbose=verbose, *args)
+		self.loadJSONSchemasExt(*args, verbose=verbose)
 
 		return len(self.getValidSchemas().keys())
 
@@ -792,9 +812,7 @@ class ExtensibleValidator(object):
 	) -> "Tuple[int, int, Mapping[str, Sequence[SecondPassErrorDict]]]":
 		secondPassOK = 0
 		secondPassFails = 0
-		secondPassErrors: "MutableMapping[str, MutableSequence[SecondPassErrorDict]]" = (
-			{}
-		)
+		secondPassErrors: "MutableMapping[str, MutableSequence[SecondPassErrorDict]]" = {}
 
 		# First, gather the list of contexts
 		gatheredContexts: "MutableMapping[str, MutableSequence[CheckContext]]" = {}
@@ -947,10 +965,10 @@ class ExtensibleValidator(object):
 								jsonDirPossibles.append(newJsonFile)
 
 						numDirOK += 1
-					except IOError as ioe:
+					except OSError as ose:
 						self.logger.critical(
 							"FATAL ERROR: Unable to open/process JSON directory {0}. Reason: {1}".format(
-								jsonDir, ioe.strerror
+								jsonDir, ose.strerror
 							)
 						)
 						yield {
@@ -990,7 +1008,7 @@ class ExtensibleValidator(object):
 											"json": jsonDoc,
 											"errors": errors,
 										}
-										ielem += 1
+										ielem += 1  # noqa: SIM113
 										# Upgrading for the next loop
 										yield jsonObj
 							except ijson.common.IncompleteJSONError as ije:
@@ -1052,10 +1070,10 @@ class ExtensibleValidator(object):
 							# Upgrading for the next loop
 							yield jsonObj
 
-					except IOError as ioe:
+					except OSError as ose:
 						self.logger.error(
 							"\t- ERROR: Unable to open/read file {0}. Reason: {1}".format(
-								jsonFile, ioe.strerror
+								jsonFile, ose.strerror
 							)
 						)
 						# Masking it for the next loop
@@ -1451,10 +1469,10 @@ class ExtensibleValidator(object):
 
 		return list(
 			self.jsonValidateIter(
+				*args,
 				verbose=verbose,
 				schema_key_expr=schema_key_expr,
 				guess_unmatched=guess_unmatched,
 				iterate_over_arrays=iterate_over_arrays,
-				*args,
 			)
 		)

@@ -72,7 +72,7 @@ class IndexKey(AbstractCustomFeatureValidator):
 		self,
 		schemaURI: str,
 		jsonSchemaSource: str = "(unknown)",
-		config: "FeatureValidatorConfig" = {},
+		config: "Optional[FeatureValidatorConfig]" = None,
 		isRW: bool = True,
 	):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
@@ -196,17 +196,18 @@ class IndexKey(AbstractCustomFeatureValidator):
 		jSteps = jPath.split(".") if jPath not in (".", "") else (None,)
 		for jStep in jSteps:
 			newObjectives = []
-			isArray = False
+			# isArray = False
 			arrayIndex = None
 			if jStep is not None:
 				jStepMatch = cls.JStepPat.search(jStep)
 				if jStepMatch is not None:
-					isArray = True
+					# isArray = True
 					if jStepMatch.group(2) is not None:
 						arrayIndex = int(jStepMatch.group(2))
 					jStep = jStepMatch.group(1)
 			for objective in objectives:
 				isAvailable = False
+				value: "Any" = None
 				if jStep is not None:
 					if isinstance(objective, dict):
 						if jStep in objective:

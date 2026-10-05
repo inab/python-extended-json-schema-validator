@@ -17,20 +17,14 @@ from .extensions.pk_check import PrimaryKey
 if TYPE_CHECKING:
 	from typing import (
 		Any,
-		ClassVar,
 		IO,
-		Iterator,
-		NamedTuple,
 		Mapping,
 		MutableMapping,
 		MutableSequence,
-		MutableSet,
 		Optional,
 		Sequence,
 		Set,
 		Tuple,
-		Type,
-		Union,
 	)
 
 	from .extensible_validator import ExtensibleValidator
@@ -309,7 +303,6 @@ def genNode(
 		else:
 			k_types = [k_type]
 
-		s_k_types: "MutableSet[str]" = set()
 		for k_t in k_types:
 			s_k_t = DECO.get(k_t)
 			if s_k_t is not None:
@@ -350,7 +343,7 @@ def genNode(
 	if pk_set is not None and toHeaderName in pk_set:
 		required = True
 		val = f'<FONT COLOR="BLUE">{val}</FONT>'
-		preval += "\U0001F511"
+		preval += "\U0001f511"
 
 	if required:
 		val = f"<B>{val}</B>"
@@ -363,12 +356,14 @@ def drawSchemasToFile(
 	ev: "ExtensibleValidator",
 	output_filename: str,
 	title: str = "JSON Schemas",
-	skip_schema: "Set[str]" = set(),
+	skip_schema: "Optional[Set[str]]" = None,
 ) -> int:
 	validSchemaDict = ev.getValidSchemas()
 	if len(validSchemaDict.keys()) == 0:
 		ev.logger.fatal("No schema was successfully loaded, so no drawing is possible")
 		return 1
+	if skip_schema is None:
+		skip_schema = set()
 	with open(output_filename, mode="w", encoding="utf-8") as DOT:
 		return drawSchemasToStream(ev, DOT, title=title, skip_schema=skip_schema)
 
@@ -406,7 +401,7 @@ def drawSchemasToStream(
 	# See https://graphviz.org/faq/font/#what-about-svg-fonts
 	pre = f"""
 digraph schemas {{
-	graph[ rankdir=LR, ranksep=2, fontsize=60, fontname="Sans-Serif", labelloc=t, label=< {title} <br/> <font point-size="40">(as of {datetime.datetime.now().isoformat()})</font> >  ];
+	graph[ rankdir=LR, ranksep=2, fontsize=60, fontname="Sans-Serif", labelloc=t, label=< {title} <br/> <font point-size="40">(as of {datetime.datetime.now(tz=datetime.timezone.utc).isoformat()})</font> >  ];
 	node [shape=tab, style=filled, fillcolor="green"];
 	edge [penwidth=2, fontname="Serif"];
 """

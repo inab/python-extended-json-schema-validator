@@ -38,7 +38,6 @@ if TYPE_CHECKING:
 		Type,
 	)
 
-	import jsonschema as JSV
 	from jsonschema.exceptions import ValidationError
 	from typing_extensions import Final, TypedDict
 
@@ -88,7 +87,7 @@ class AbstractCustomFeatureValidator(abc.ABC):
 		self,
 		schemaURI: str,
 		jsonSchemaSource: str = "(unknown)",
-		config: "FeatureValidatorConfig" = {},
+		config: "Optional[FeatureValidatorConfig]" = None,
 		isRW: bool = True,
 	):
 		self.logger = logging.getLogger(
@@ -99,7 +98,7 @@ class AbstractCustomFeatureValidator(abc.ABC):
 
 		self.schemaURI = schemaURI
 		self.jsonSchemaSource = jsonSchemaSource
-		self.config = config
+		self.config = config if config is not None else dict()
 		self.isRW = isRW
 		self.bootstrapMessages = None
 		self.currentJSONFile = "(unset)"
@@ -125,7 +124,7 @@ class AbstractCustomFeatureValidator(abc.ABC):
 					# Is the directory writable?
 					if not os.access(cachePath, os.W_OK):
 						doTempDir = True
-				except OSError as e:
+				except OSError:
 					# As it was not possible to create the
 					# directory at the cache path, go to the
 					# temporary directory

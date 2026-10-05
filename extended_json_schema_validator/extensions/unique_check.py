@@ -16,11 +16,7 @@ if TYPE_CHECKING:
 	from typing import (
 		Any,
 		Iterator,
-		Mapping,
-		MutableMapping,
-		MutableSequence,
 		Optional,
-		Sequence,
 		Tuple,
 		Union,
 	)
@@ -29,9 +25,7 @@ if TYPE_CHECKING:
 	from typing_extensions import Final
 
 	from .abstract_check import (
-		BootstrapErrorDict,
 		FeatureValidatorConfig,
-		RefSchemaTuple,
 	)
 
 
@@ -44,10 +38,12 @@ class UniqueKey(IndexKey):
 		self,
 		schemaURI: str,
 		jsonSchemaSource: str = "(unknown)",
-		config: "FeatureValidatorConfig" = {},
+		config: "Optional[FeatureValidatorConfig]" = None,
 		isRW: bool = True,
 	):
-		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
+		super().__init__(
+			schemaURI, jsonSchemaSource=jsonSchemaSource, config=config, isRW=isRW
+		)
 
 	@property
 	def triggerAttribute(self) -> str:

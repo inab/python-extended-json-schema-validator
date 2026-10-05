@@ -24,8 +24,6 @@ from typing import cast, TYPE_CHECKING
 
 if TYPE_CHECKING:
 	from typing import (
-		Any,
-		MutableMapping,
 		MutableSequence,
 		Sequence,
 		Optional,
@@ -317,8 +315,8 @@ def main() -> None:
 			for annoying_key in ("customFormatInstances", "validator", "ref_resolver"):
 				if annoying_key in s_rep:
 					del s_rep[
-						cast(
-							'Literal["customFormatInstances", "validator", "ref_resolver"]',
+						cast(  # type: ignore[redundant-cast]
+							'Literal["customFormatInstances", "validator", "ref_resolver"]',  # noqa: F821
 							annoying_key,
 						)
 					]
@@ -348,25 +346,27 @@ def main() -> None:
 			skip_schema=set([commonprefix]),
 		)
 
+	logger = logging.getLogger(__name__)
+
 	if len(sys.argv) > 2:
 		numSchemas = len(ev.getValidSchemas().keys())
 		if numSchemas == 0:
-			logging.critical(
+			logger.critical(
 				"FATAL ERROR: No schema was successfully loaded. Exiting...\n"
 			)
 			sys.exit(1)
 
 		# Should we invalidate caches before parsing?
 		if args.invalidate:
-			logging.info("\n* Invalidating caches.")
+			logger.info("\n* Invalidating caches.")
 			ev.invalidateCaches()
 
 		if args.warmUp:
-			logging.info("\n* Warming up caches...")
+			logger.info("\n* Warming up caches...")
 			t0 = time.time()
 			ev.warmUpCaches()
 			t1 = time.time()
-			logging.info("\t{} seconds".format(t1 - t0))
+			logger.info("\t{} seconds".format(t1 - t0))
 
 		# Now, time to parse
 		jsonFiles = tuple(args.json_files)
@@ -390,7 +390,7 @@ def main() -> None:
 			while True:
 				loopExitCode = 0
 				sep = "["
-				logging.info(f"* Storing validation report at {fixReportFilename}")
+				logger.info(f"* Storing validation report at {fixReportFilename}")
 				with open(fixReportFilename, mode="w", encoding="utf-8") as repH:
 					# First, write the schema report
 					for rep in schema_report:
@@ -441,10 +441,10 @@ def main() -> None:
 							shell=True,
 						)
 						fix_proc.wait()
-					except KeyboardInterrupt as ke:
+					except KeyboardInterrupt:
 						# Signaling the child
 						fix_proc.send_signal(signal.SIGINT)
-						raise ke
+						raise
 				else:
 					break
 
@@ -464,7 +464,7 @@ def main() -> None:
 					if not args.doContinue:
 						break
 	elif args.reportFilename is not None:
-		logging.info(f"* Storing schema validation report at {args.reportFilename}")
+		logger.info(f"* Storing schema validation report at {args.reportFilename}")
 		with open(args.reportFilename, mode="w", encoding="utf-8") as repH:
 			json.dump(schema_report, repH, indent=4, sort_keys=True)
 

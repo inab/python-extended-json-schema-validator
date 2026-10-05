@@ -10,6 +10,9 @@ from .index_check import (
 )
 
 if TYPE_CHECKING:
+	from typing import (
+		Optional,
+	)
 	from typing_extensions import Final
 
 	from .abstract_check import (
@@ -27,7 +30,7 @@ class JoinKey(AbstractRefKey):
 		self,
 		schemaURI: str,
 		jsonSchemaSource: str = "(unknown)",
-		config: "FeatureValidatorConfig" = {},
+		config: "Optional[FeatureValidatorConfig]" = None,
 		isRW: bool = True,
 	):
 		super().__init__(
