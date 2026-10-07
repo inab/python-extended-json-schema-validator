@@ -10,6 +10,7 @@ mypy != 2.0.* ; implementation_name == 'pypy'
 mypy != 2.1.* ; implementation_name == 'pypy'
 mypy != 2.2.* ; implementation_name == 'pypy'
 mypy != 2.3.* ; implementation_name == 'pypy'
+mypy != 2.4.* ; implementation_name == 'pypy'
 pre-commit >= 2.17.0
 pydeps
 build

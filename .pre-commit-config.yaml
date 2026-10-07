@@ -28,7 +28,7 @@ repos:
         types:
           - python
         exclude: "/(site-packages|development-[^/]*|docs|node_modules|__pycache__|\\..*)/$"
-        entry: pylint -j 0
+        entry: ./pylint-shim.sh
         args: [--source-roots, .]
       - id: mypy
         name: Local MyPy
