@@ -14,7 +14,7 @@ import tempfile
 import time
 
 import jsonpath_ng  # type: ignore[import]
-import jsonpath_ng.ext  # type: ignore[import]
+import jsonpath_ng.ext.parser  # type: ignore[import]
 import yaml
 
 from . import version as ejsv_version
@@ -302,7 +302,7 @@ def main() -> None:
 		exitCode = 3
 
 	if args.annotReport:
-		annotP = jsonpath_ng.ext.parse(args.annotReport)
+		annotP = jsonpath_ng.ext.parser.parse(args.annotReport)  # type: ignore[no-untyped-call]
 	else:
 		annotP = None
 
@@ -312,11 +312,16 @@ def main() -> None:
 			s_rep = copy.copy(loadedSchema)
 
 			# Removing annoying instances
-			for annoying_key in ("customFormatInstances", "validator", "ref_resolver"):
+			for annoying_key in (
+				"customFormatInstances",
+				"validator",
+				"ref_resolver",
+				"registry",
+			):
 				if annoying_key in s_rep:
 					del s_rep[
 						cast(  # type: ignore[redundant-cast]
-							'Literal["customFormatInstances", "validator", "ref_resolver"]',  # noqa: F821
+							'Literal["customFormatInstances", "validator", "ref_resolver", "registry"]',  # noqa: F821
 							annoying_key,
 						)
 					]

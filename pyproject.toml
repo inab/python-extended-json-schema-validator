@@ -58,3 +58,7 @@ ignore = [
 	"UP043",
 	"UP045"
 ]
+
+[[tool.mypy.overrides]]
+module = ["ijson.*", "jsonpath_ng.*"]
+follow_untyped_imports = true

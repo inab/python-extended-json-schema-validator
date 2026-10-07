@@ -7,15 +7,30 @@ import hashlib
 import json
 import logging
 import os
+import sys
 from typing import NamedTuple, TYPE_CHECKING, cast
 import uuid
 
 import ijson  # type: ignore[import]
 import jsonpath_ng  # type: ignore[import]
-import jsonpath_ng.ext  # type: ignore[import]
+import jsonpath_ng.ext.parser  # type: ignore[import]
 import jsonschema as JSV
 import uritools  # type: ignore[import]
 import yaml
+
+try:
+	import importlib.metadata as importlib_metadata  # type: ignore[import]
+except ModuleNotFoundError:
+	# Python 3.7
+	import importlib_metadata  # type: ignore[no-redef]
+
+JSONSCHEMA_MODULE_VERSION: "Final[Tuple[int, ...]]" = tuple(
+	map(int, importlib_metadata.version("jsonschema").split("."))
+)
+
+if sys.version_info >= (3, 8):
+	import referencing
+	import referencing.jsonschema
 
 from .extend_validator_helpers import (
 	PLAIN_VALIDATOR_MAPPER,
@@ -55,6 +70,7 @@ if TYPE_CHECKING:
 	from typing_extensions import (
 		Final,
 		Protocol,
+		TypeAlias,
 		TypedDict,
 		runtime_checkable,
 	)
@@ -97,6 +113,11 @@ if TYPE_CHECKING:
 		schema_id: str
 		errors: ErrorsType
 		annot: "Any"
+
+	if sys.version_info >= (3, 8):
+		SchemaRegistry: TypeAlias = referencing.jsonschema.SchemaRegistry
+	else:
+		SchemaRegistry = Any
 
 
 class LoadedSchemasStats(NamedTuple):
@@ -468,18 +489,52 @@ class ExtensibleValidator:
 
 			# We need to shadow the original schema
 			id_prop = "$id" if "$id" in metaSchema else "id"
+
 			localRefSchemaCache = copy.copy(refSchemaCache)
 			localRefSchemaCache[metaSchema[id_prop]] = metaSchema
 			if metaSchema[id_prop][-1] == "#":
 				localRefSchemaCache[metaSchema[id_prop][0:-1]] = metaSchema
-			cachedSchemasResolver = JSV.RefResolver(
-				base_uri=jsonSchemaURI, referrer=jsonSchema, store=localRefSchemaCache
-			)
+
+			cachedSchemasResolver: "Optional[JSV.RefResolver]" = None
+			if sys.version_info >= (3, 8):
+				cached_registry: "Optional[SchemaRegistry]" = None
+			if JSONSCHEMA_MODULE_VERSION < (4, 18):
+				cachedSchemasResolver = JSV.RefResolver(
+					base_uri=jsonSchemaURI,
+					referrer=jsonSchema,
+					store=localRefSchemaCache,
+				)
+				validator_instance = validator(
+					metaSchema, resolver=cachedSchemasResolver
+				)
+			elif sys.version_info >= (3, 8):
+
+				def schema_retriever(uri: "str") -> "referencing.Resource[Any]":
+					if uri in refSchemaCache:
+						self.logger.debug(f"SCHEMA RETRIEVER: {uri}")
+						return referencing.Resource.from_contents(refSchemaCache[uri])
+					else:
+						self.logger.error(f"SCHEMA UNCACHED REQUEST => {uri}")
+						raise referencing.exceptions.NoSuchResource(ref=uri)  # type: ignore[call-arg]
+
+				cached_registry = referencing.jsonschema.SchemaRegistry(
+					retrieve=schema_retriever
+				)  # type: ignore[call-arg]
+
+				for cached_schema_id, cached_schema in localRefSchemaCache.items():
+					cached_registry.with_resource(
+						cached_schema_id,
+						referencing.Resource.from_contents(cached_schema),
+					)
+
+				validator_instance = validator(metaSchema, registry=cached_registry)
+			else:
+				raise NotImplementedError(
+					f"Incompatible case having Python {sys.version_info} and jsonschema {JSONSCHEMA_MODULE_VERSION}"
+				)
 
 			printed_errors = False
-			for valError in validator(
-				metaSchema, resolver=cachedSchemasResolver
-			).iter_errors(jsonSchema):
+			for valError in validator_instance.iter_errors(jsonSchema):
 				if not printed_errors:
 					self.logger.error("\t- ERRORS:\n")
 				printed_errors = True
@@ -539,6 +594,10 @@ class ExtensibleValidator:
 					)
 
 					schemaObj["ref_resolver"] = cachedSchemasResolver
+					if sys.version_info >= (3, 8):
+						schemaObj["registry"] = cached_registry
+					else:
+						schemaObj["registry"] = None
 					p_schemaHash[jsonSchemaURI] = schemaObj
 					numFileOK += 1
 			else:
@@ -760,16 +819,16 @@ class ExtensibleValidator:
 
 		return len(self.getValidSchemas().keys())
 
-	def getValidSchemas(
-		self, do_resolve: bool = False
-	) -> "Mapping[str, SchemaHashEntry]":
-		if do_resolve:
-			for jsonSchemaURI, schemaObj in self.schemaHash.items():
-				if "resolved_schema" not in schemaObj:
-					resolvedSchema = export_resolved_references(
-						jsonSchemaURI, schemaObj["schema"], self.schemaHash
-					)
-					schemaObj["resolved_schema"] = resolvedSchema
+	def getValidSchemas(self) -> "Mapping[str, SchemaHashEntry]":
+		return self.schemaHash
+
+	def getResolvedValidSchemas(self) -> "Mapping[str, SchemaHashEntry]":
+		for jsonSchemaURI, schemaObj in self.schemaHash.items():
+			if "resolved_schema" not in schemaObj:
+				resolvedSchema = export_resolved_references(
+					jsonSchemaURI, schemaObj["schema"], self.schemaHash
+				)
+				schemaObj["resolved_schema"] = resolvedSchema
 
 		return self.schemaHash
 
@@ -902,7 +961,7 @@ class ExtensibleValidator:
 			schema_key_expr = newSchemaKeyExpr
 
 		self.logger.debug(f"JSON Path to identify the schema is {schema_key_expr}")
-		schemaP = jsonpath_ng.ext.parse(schema_key_expr)
+		schemaP = jsonpath_ng.ext.parser.parse(schema_key_expr)  # type: ignore[no-untyped-call]
 
 		# JSON validation stats
 		numDirOK = 0
@@ -926,6 +985,33 @@ class ExtensibleValidator:
 					# We reset them, in case they were dirty
 					self._resetDynamicValidators(localDynSchemaVal)
 					dynSchemaValList.extend(localDynSchemaVal)
+
+		if sys.version_info >= (3, 8):
+			if JSONSCHEMA_MODULE_VERSION < (4, 18):
+				raise NotImplementedError(
+					f"Incompatible case having Python {sys.version_info} and jsonschema {JSONSCHEMA_MODULE_VERSION}"
+				)
+			cached_registry: "Optional[SchemaRegistry]" = None
+
+			def cached_retriever(uri: "str") -> "referencing.Resource[Any]":
+				if uri in p_schemaHash:
+					self.logger.debug(f"GOLDEN RETRIEVER: {uri}")
+					return referencing.Resource.from_contents(
+						p_schemaHash[uri]["schema"]
+					)
+				else:
+					self.logger.error(f"UNCACHED REQUEST => {uri}")
+					raise referencing.exceptions.NoSuchResource(ref=uri)  # type: ignore[call-arg]
+
+			cached_registry = referencing.jsonschema.SchemaRegistry(
+				retrieve=cached_retriever
+			)  # type: ignore[call-arg]
+
+			for cached_schema_id, schemaObj in p_schemaHash.items():
+				cached_registry.with_resource(
+					cached_schema_id,
+					referencing.Resource.from_contents(schemaObj["schema"]),
+				)
 
 		# First pass, check against JSON schema, as well as primary keys unicity
 		self.logger.log(logLevel, "PASS 1: Schema validation and PK checks")
@@ -1171,18 +1257,31 @@ class ExtensibleValidator:
 					jsonObj["schema_hash"] = schemaObj["schema_hash"]
 					jsonObj["schema_id"] = jsonSchemaIdVal
 
-					cachedSchemasResolver = JSV.RefResolver(
-						base_uri=jsonSchemaIdVal,
-						referrer=jsonSchema,
-						store=self.refSchemaCache,
-					)
+					if JSONSCHEMA_MODULE_VERSION < (4, 18):
+						cachedSchemasResolver = JSV.RefResolver(
+							base_uri=jsonSchemaIdVal,
+							referrer=jsonSchema,
+							store=self.refSchemaCache,
+						)
+						validator_instance = validator(
+							jsonSchema,
+							format_checker=self.customFormatCheckerInstance,
+							resolver=cachedSchemasResolver,
+						)
+					elif sys.version_info >= (3, 8):
+						assert cached_registry is not None
+						validator_instance = validator(  # type: ignore[call-arg]
+							jsonSchema,
+							format_checker=self.customFormatCheckerInstance,
+							registry=cached_registry,
+						)
+					else:
+						raise NotImplementedError(
+							f"Incompatible case having Python {sys.version_info} and jsonschema {JSONSCHEMA_MODULE_VERSION}"
+						)
 
 					printed_errors = False
-					for se in validator(
-						jsonSchema,
-						format_checker=self.customFormatCheckerInstance,
-						resolver=cachedSchemasResolver,
-					).iter_errors(jsonDoc):
+					for se in validator_instance.iter_errors(jsonDoc):
 						if not printed_errors:
 							self.logger.error("\t- ERRORS:\n")
 						printed_errors = True
@@ -1267,18 +1366,31 @@ class ExtensibleValidator:
 					jsonSchema = schemaObj["schema"]
 					validator = schemaObj["validator"]
 
-					cachedSchemasResolver = JSV.RefResolver(
-						base_uri=jsonSchemaIdVal,
-						referrer=jsonSchema,
-						store=self.refSchemaCache,
-					)
+					if JSONSCHEMA_MODULE_VERSION < (4, 18):
+						cachedSchemasResolver = JSV.RefResolver(
+							base_uri=jsonSchemaIdVal,
+							referrer=jsonSchema,
+							store=self.refSchemaCache,
+						)
+						validator_instance = validator(
+							jsonSchema,
+							format_checker=self.customFormatCheckerInstance,
+							resolver=cachedSchemasResolver,
+						)
+					elif sys.version_info >= (3, 8):
+						assert cached_registry is not None
+						validator_instance = validator(  # type: ignore[call-arg]
+							jsonSchema,
+							format_checker=self.customFormatCheckerInstance,
+							registry=cached_registry,
+						)
+					else:
+						raise NotImplementedError(
+							f"Incompatible case having Python {sys.version_info} and jsonschema {JSONSCHEMA_MODULE_VERSION}"
+						)
 
 					failed_val = False
-					for this_error in validator(
-						jsonSchema,
-						format_checker=self.customFormatCheckerInstance,
-						resolver=cachedSchemasResolver,
-					).iter_errors(jsonDoc):
+					for this_error in validator_instance.iter_errors(jsonDoc):
 						failed_val = True
 						# Label the errors with the schema_id
 						# so errors are contextualized

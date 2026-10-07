@@ -7,7 +7,11 @@ import logging
 import os
 import shutil
 import tempfile
-from typing import TYPE_CHECKING, NamedTuple, cast
+from typing import (
+	cast,
+	NamedTuple,
+	TYPE_CHECKING,
+)
 
 import xdg.BaseDirectory
 
@@ -39,7 +43,16 @@ if TYPE_CHECKING:
 	)
 
 	from jsonschema.exceptions import ValidationError
-	from typing_extensions import Final, TypedDict
+	from typing_extensions import Final, TypeAlias, TypedDict
+
+	import sys
+
+	if sys.version_info >= (3, 8):
+		import referencing.jsonschema
+
+		SchemaRegistry: TypeAlias = referencing.jsonschema.SchemaRegistry
+	else:
+		SchemaRegistry: TypeAlias = Any
 
 	class BootstrapErrorDict(TypedDict, total=False):
 		reason: str
@@ -57,7 +70,8 @@ if TYPE_CHECKING:
 		errors: "MutableSequence[BootstrapErrorDict]"
 		customFormatInstances: "Sequence[AbstractCustomFeatureValidator]"
 		validator: "Type[JSV.validators._Validator]"
-		ref_resolver: "JSV.RefResolver"
+		ref_resolver: "Optional[JSV.RefResolver]"
+		registry: "Optional[SchemaRegistry]"
 		resolved_schema: "Any"
 		id_key: "str"
 		uri: "str"

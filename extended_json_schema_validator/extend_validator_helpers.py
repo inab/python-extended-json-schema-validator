@@ -4,7 +4,7 @@
 import copy
 import logging
 from typing import TYPE_CHECKING, cast
-from urllib.parse import urldefrag
+import urllib.parse
 
 import jsonschema as JSV
 import uritools  # type: ignore[import]
@@ -378,7 +378,7 @@ def refResolver_find_in_subschemas(
 	if not subschemas:
 		return None
 
-	uri, fragment = urldefrag(url)
+	uri, fragment = urllib.parse.urldefrag(url)
 	for subschema in subschemas:
 		if isinstance(subschema["$id"], str):
 			target_uri = refResolver._urljoin_cache(  # type: ignore[attr-defined]
@@ -395,19 +395,33 @@ def refResolver_find_in_subschemas(
 	return None
 
 
-def refResolver_resolve(
-	refResolver: "JSV.RefResolver", ref: str
+def schema_hash_entry_resolver(
+	sher: "SchemaHashEntry", ref: "str"
 ) -> "Optional[Tuple[str, Any]]":
 	"""
 	Resolve the given reference.
 	"""
-	url = refResolver._urljoin_cache(refResolver.resolution_scope, ref).rstrip("/")  # type: ignore[attr-defined]
+	refResolver = sher.get("ref_resolver")
+	# Old school
+	if refResolver is not None:
+		url = refResolver._urljoin_cache(refResolver.resolution_scope, ref).rstrip("/")  # type: ignore[attr-defined]
 
-	match = refResolver_find_in_subschemas(refResolver, url)
-	if match is not None:
-		return match
+		match = refResolver_find_in_subschemas(refResolver, url)
+		if match is not None:
+			return match
 
-	return url, refResolver._remote_cache(url)  # type: ignore[attr-defined]
+		return url, refResolver._remote_cache(url)  # type: ignore[attr-defined]
+
+	registry = sher.get("registry")
+	if registry is not None:
+		base_uri = sher.get("uri", "")
+		# logging.error(f"OJO Resolving {ref} using {base_uri}")
+		resolver = registry.resolver(base_uri=base_uri)
+		resolved = resolver.lookup(ref)
+		return urllib.parse.urljoin(base_uri, ref), resolved.contents
+
+	# No match, no answer!
+	return None
 
 
 def export_resolved_references(
@@ -434,10 +448,10 @@ def export_resolved_references(
 				if schemaObj is None:
 					raise Exception(f"Unable to resolve {contextSchemaURI}")
 
-				refResolver = schemaObj["ref_resolver"]
+				# refResolver = schemaObj["ref_resolver"]
 
 				# One step resolution
-				ref_schema = refResolver_resolve(refResolver, value)
+				ref_schema = schema_hash_entry_resolver(schemaObj, value)
 				if ref_schema:
 					# return ref_schema[1]
 					if resolved is not None and contextSchemaURI in resolved:

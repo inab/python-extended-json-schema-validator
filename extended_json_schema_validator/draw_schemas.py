@@ -9,7 +9,7 @@ import logging
 from typing import cast, NamedTuple, TYPE_CHECKING
 
 from .extend_validator_helpers import (
-	refResolver_resolve,
+	schema_hash_entry_resolver,
 )
 from .extensions.fk_check import ForeignKey
 from .extensions.pk_check import PrimaryKey
@@ -395,7 +395,7 @@ def schemaPath2JSONPath(schemaPath: str) -> str:
 def drawSchemasToStream(
 	ev: "ExtensibleValidator", DOT: "IO[str]", title: str, skip_schema: "Set[str]"
 ) -> int:
-	validSchemaDict = ev.getValidSchemas(do_resolve=True)
+	validSchemaDict = ev.getResolvedValidSchemas()
 	refSchemaSet = ev.getRefSchemaSet()
 	# Now it is time to draw the schemas themselves
 	# See https://graphviz.org/faq/font/#what-about-svg-fonts
@@ -442,7 +442,7 @@ digraph schemas {{
 		if schemaObj_o is None:
 			continue
 
-		refResolver = schemaObj_o["ref_resolver"]
+		# refResolver = schemaObj_o["ref_resolver"]
 
 		id2ElemId, keyRefs, jp2val = jsonSchemaSet
 		for the_id, featureLocs in keyRefs.items():
@@ -460,7 +460,9 @@ digraph schemas {{
 						if ref_schema_id is None:
 							to_jsonSchemaURI = jsonSchemaURI
 						else:
-							resolved = refResolver_resolve(refResolver, ref_schema_id)
+							resolved = schema_hash_entry_resolver(
+								schemaObj_o, ref_schema_id
+							)
 							if resolved is None:
 								continue
 							to_jsonSchemaURI = resolved[0]
