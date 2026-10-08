@@ -1,6 +1,24 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# Copyright 2018-2026 Barcelona Supercomputing Center (BSC), Spain
+#
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as
+# published by the Free Software Foundation; either version 2.1 of the
+# License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the
+# Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+# Boston, MA 02110-1301 USA
+
 import os
 import re
 import sys
@@ -13,7 +31,10 @@ import setuptools
 setupBaseDir = os.path.dirname(__file__)
 sys.path.insert(0, setupBaseDir)
 
-from extended_json_schema_validator import version as extended_validator_version
+from extended_json_schema_validator import (
+	version as extended_validator_version,
+	__license__ as extended_validator_license,
+)
 
 # Populating the long description
 with open(os.path.join(setupBaseDir, "README.md"), "r", encoding="utf-8") as fh:
@@ -35,7 +56,7 @@ setuptools.setup(
 	author="José Mª Fernández",
 	author_email="jose.m.fernandez@bsc.es",
 	description="Extended JSON Schema Validator",
-	license="LGPLv2",
+	license=extended_validator_license,
 	long_description=long_description,
 	long_description_content_type="text/markdown",
 	url="https://github.com/inab/python-extended-json-schema-validator",
@@ -58,7 +79,6 @@ setuptools.setup(
 	},
 	classifiers=[
 		"Programming Language :: Python :: 3",
-		"License :: OSI Approved :: GNU Lesser General Public License v2 (LGPLv2)",
 		"Operating System :: OS Independent",
 	],
 	python_requires=">=3.7",
