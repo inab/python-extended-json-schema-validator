@@ -212,6 +212,13 @@ def main() -> None:
 		metavar=("FILENAME", "TITLE"),
 		help="Depict the schemas in a file using DOT format, providing the title given in the second param",
 	)
+	ap.add_argument(
+		"--mermaid-report",
+		dest="mermaidReport",
+		nargs=2,
+		metavar=("FILENAME", "TITLE"),
+		help="Depict the schemas in a file using mermaid format, providing the title given in the second param",
+	)
 
 	grp0 = ap.add_mutually_exclusive_group()
 	grp0.add_argument(
@@ -348,7 +355,20 @@ def main() -> None:
 			ev,
 			args.dotReport[0],
 			title=args.dotReport[1],
-			skip_schema=set([commonprefix]),
+			fmt="dot",
+			skip_schema=frozenset([commonprefix]),
+		)
+
+	if args.mermaidReport is not None:
+		from .draw_schemas import drawSchemasToFile
+
+		commonprefix = os.path.commonprefix(list(ev.getValidSchemas().keys()))
+		drawSchemasToFile(
+			ev,
+			args.mermaidReport[0],
+			title=args.mermaidReport[1],
+			fmt="mermaid",
+			skip_schema=frozenset([commonprefix]),
 		)
 
 	logger = logging.getLogger(__name__)
