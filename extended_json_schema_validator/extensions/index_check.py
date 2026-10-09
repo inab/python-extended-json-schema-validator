@@ -72,7 +72,7 @@ class IndexDef(NamedTuple):
 
 
 if TYPE_CHECKING:
-	IndexWorldType = MutableMapping[int, IndexDef]
+	IndexWorldType = MutableMapping[str, IndexDef]
 	IndexWorldByNameType = MutableMapping[str, IndexDef]
 
 
@@ -95,6 +95,7 @@ class IndexKey(AbstractCustomFeatureValidator):
 	):
 		super().__init__(schemaURI, jsonSchemaSource, config, isRW=isRW)
 		self.IndexWorld: "IndexWorldType" = dict()
+		self.IndexWorldSiblings: "MutableMapping[int, Set[str]]" = dict()
 		self.IndexWorldByName: "IndexWorldByNameType" = dict()
 
 	@property
@@ -144,6 +145,37 @@ class IndexKey(AbstractCustomFeatureValidator):
 							"members",
 						],
 					},
+					{
+						"type": "array",
+						"minItems": 1,
+						"items": {
+							"type": "object",
+							"properties": {
+								"members": {
+									"oneOf": [
+										{"type": "boolean"},
+										{
+											"type": "array",
+											"items": {"type": "string", "minLength": 1},
+											"uniqueItems": True,
+											"minItems": 1,
+										},
+									]
+								},
+								"limit_scope": {
+									"type": "boolean",
+									"default": False,
+								},
+								"name": {
+									"type": "string",
+									"minLength": 1,
+								},
+							},
+							"required": [
+								"members",
+							],
+						},
+					},
 				]
 			}
 		}
@@ -167,42 +199,56 @@ class IndexKey(AbstractCustomFeatureValidator):
 		for loc in keyList:
 			iLoc = IndexLoc(schemaURI=loc.schemaURI, path=loc.path)
 			iId = id(loc.context)
+			iId_str = str(iId)
 
-			iDef = self.IndexWorld.get(iId)
+			put_poss_members = loc.context[self.triggerAttribute]
 
-			# This control is here for multiple inheritance cases
-			if iDef is not None:
-				iDef = iDef._replace(indexLoc=iLoc)
-				self.IndexWorld[iId] = iDef
-				self.IndexWorldByName[iDef.name] = iDef
-			else:
-				poss_members = loc.context[self.triggerAttribute]
-				if isinstance(poss_members, dict):
-					index_members = poss_members["members"]
-					index_name = poss_members.get("name")
-					limit_scope_v = poss_members.get("limit_scope", False)
-					limit_scope = False if limit_scope_v is None else limit_scope_v
+			all_poss_members: "Sequence[Union[bool, Sequence[str],Mapping[str, Any]]]" = []
+			if isinstance(put_poss_members, (dict, bool)):
+				all_poss_members = [put_poss_members]
+			elif isinstance(put_poss_members, list):
+				if len(put_poss_members) > 0 and isinstance(put_poss_members[0], str):
+					all_poss_members = [put_poss_members]
 				else:
-					index_members = poss_members
-					index_name = None
-					limit_scope = False
-				# Assigning a random name
-				if index_name is None:
-					index_name = f"{self.randomKeyPrefix}_{iId}"
-				iDef = IndexDef(
-					indexLoc=iLoc,
-					members=index_members,
-					name=index_name,
-					limit_scope=limit_scope,
-					values=dict(),
-				)
-				self.IndexWorld[iId] = iDef
-				if index_name in self.IndexWorldByName:
-					self.logger.warning(
-						f"Repeated named {self.randomKeyPrefix} '{index_name}'. Be prepared for hairy responses."
+					all_poss_members = put_poss_members
+
+			for idx_i, poss_members in enumerate(all_poss_members):
+				i_loc_id = iId_str + "_" + str(idx_i)
+				self.IndexWorldSiblings.setdefault(iId, set()).add(i_loc_id)
+				iDef = self.IndexWorld.get(i_loc_id)
+
+				# This control is here for multiple inheritance cases
+				if iDef is not None:
+					iDef = iDef._replace(indexLoc=iLoc)
+					self.IndexWorld[i_loc_id] = iDef
+					self.IndexWorldByName[iDef.name] = iDef
+				else:
+					if isinstance(poss_members, dict):
+						index_members = poss_members["members"]
+						index_name = poss_members.get("name")
+						limit_scope_v = poss_members.get("limit_scope", False)
+						limit_scope = False if limit_scope_v is None else limit_scope_v
+					else:
+						index_members = poss_members
+						index_name = None
+						limit_scope = False
+					# Assigning a random name
+					if index_name is None:
+						index_name = f"{self.randomKeyPrefix}_{i_loc_id}"
+					iDef = IndexDef(
+						indexLoc=iLoc,
+						members=index_members,
+						name=index_name,
+						limit_scope=limit_scope,
+						values=dict(),
 					)
-				else:
-					self.IndexWorldByName[index_name] = iDef
+					self.IndexWorld[i_loc_id] = iDef
+					if index_name in self.IndexWorldByName:
+						self.logger.warning(
+							f"Repeated named {self.randomKeyPrefix} '{index_name}'. Be prepared for hairy responses."
+						)
+					else:
+						self.IndexWorldByName[index_name] = iDef
 
 		return []
 
@@ -324,69 +370,71 @@ class IndexKey(AbstractCustomFeatureValidator):
 			yield
 		if index_state:
 			# Check the unicity
-			index_id = id(schema)
+			index_siblings_id = id(schema)
 
 			# The common dictionary for this declaration where all the indexed values are kept
-			indexDef = self.IndexWorld.get(index_id)
-			if indexDef is None:
-				if isinstance(index_state, dict):
-					index_members = index_state["members"]
-					index_name = index_state.get("name")
-					limit_scope_v = index_state.get("limit_scope", False)
-					limit_scope = False if limit_scope_v is None else limit_scope_v
-				else:
-					index_members = index_state
-					index_name = None
-					limit_scope = False
-				# Assigning a random name
-				if index_name is None:
-					index_name = f"{self.randomKeyPrefix}_{index_id}"
+			index_siblings = self.IndexWorldSiblings.get(index_siblings_id, set())
+			for index_id in index_siblings:
+				indexDef = self.IndexWorld.get(index_id)
+				if indexDef is None:
+					if isinstance(index_state, dict):
+						index_members = index_state["members"]
+						index_name = index_state.get("name")
+						limit_scope_v = index_state.get("limit_scope", False)
+						limit_scope = False if limit_scope_v is None else limit_scope_v
+					else:
+						index_members = index_state
+						index_name = None
+						limit_scope = False
+					# Assigning a random name
+					if index_name is None:
+						index_name = f"{self.randomKeyPrefix}_{index_id}"
 
-				indexDef = IndexDef(
-					indexLoc=IndexLoc(schemaURI=self.schemaURI, path="(unknown)"),
-					members=index_members,
-					name=index_name,
-					limit_scope=limit_scope,
-					values=dict(),
-				)
-				self.IndexWorld[index_id] = indexDef
-				if index_name in self.IndexWorldByName:
-					self.logger.warning(
-						f"Repeated named {self.randomKeyPrefix} '{index_name}'. Be prepared for hairy responses."
+					indexDef = IndexDef(
+						indexLoc=IndexLoc(schemaURI=self.schemaURI, path="(unknown)"),
+						members=index_members,
+						name=index_name,
+						limit_scope=limit_scope,
+						values=dict(),
 					)
+					self.IndexWorld[index_id] = indexDef
+					if index_name in self.IndexWorldByName:
+						self.logger.warning(
+							f"Repeated named {self.randomKeyPrefix} '{index_name}'. Be prepared for hairy responses."
+						)
+					else:
+						self.IndexWorldByName[index_name] = indexDef
+
+				if isinstance(indexDef.members, list):
+					obtainedValues = self.GetKeyValues(value, indexDef.members)
 				else:
-					self.IndexWorldByName[index_name] = indexDef
+					obtainedValues = ([value],)
 
-			if isinstance(indexDef.members, list):
-				obtainedValues = self.GetKeyValues(value, indexDef.members)
-			else:
-				obtainedValues = ([value],)
+				# We are adding another "indirection"
+				if indexDef.limit_scope:
+					obtainedValues = ([self.currentJSONFile], *obtainedValues)
+					isAtomicValue = False
+				else:
+					isAtomicValue = (
+						len(obtainedValues) == 1
+						and len(obtainedValues[0]) == 1
+						and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
+					)
 
-			# We are adding another "indirection"
-			if indexDef.limit_scope:
-				obtainedValues = ([self.currentJSONFile], *obtainedValues)
-				isAtomicValue = False
-			else:
-				isAtomicValue = (
-					len(obtainedValues) == 1
-					and len(obtainedValues[0]) == 1
-					and isinstance(obtainedValues[0][0], ALLOWED_ATOMIC_VALUE_TYPES)
-				)
+				theValues: "Tuple[Union[str, int, float, bool, None], ...]"
+				if isAtomicValue:
+					theValues = (obtainedValues[0][0],)
+				else:
+					theValues = self.GenKeyStrings(obtainedValues)
 
-			theValues: "Tuple[Union[str, int, float, bool, None], ...]"
-			if isAtomicValue:
-				theValues = (obtainedValues[0][0],)
-			else:
-				theValues = self.GenKeyStrings(obtainedValues)
+				indexValues = indexDef.values
+				# Should it complain about this?
+				for theValue in theValues:
+					# No error, as it is only indexing for the join_keys
+					if theValue not in indexValues:
+						indexValues[theValue] = set()
 
-			indexValues = indexDef.values
-			# Should it complain about this?
-			for theValue in theValues:
-				# No error, as it is only indexing for the join_keys
-				if theValue not in indexValues:
-					indexValues[theValue] = set()
-
-				indexValues[theValue].add(self.currentJSONFile)
+					indexValues[theValue].add(self.currentJSONFile)
 
 	def forget(self, the_json_file: "str") -> "bool":
 		"""

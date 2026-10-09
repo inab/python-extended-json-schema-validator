@@ -16,6 +16,10 @@ The extensions implemented are focused on features which involve more than one J
     
     + It could have a `limit_scope` key, which is a boolean and can impose a limitation of the scope of this unique key.
 
+  + If `unique` is an array of objects:
+    
+    + Each one of the objects must fulfil the requirements declared in the previous case.
+
 * __Primary key values check__: When the `primary_key` attribute is declared, the values assigned in that part of the schema on a set of JSON contents must be unique, and can be referenced by _foreign keys_. The check includes all the loaded JSON contents. Its behaviour is similar to `unique` extension (there are several examples inside [test-data](test-data)):
 
   + If `primary_key` is a _`true`_ JSON value, the whole value in that position is used for the uniqueness check.
@@ -75,6 +79,10 @@ primary_key:
     + It could have `name` key, which gives a referencing name. This is useful for complex documents where several parts define their own indexes, so join keys scope can be narrowed to an specific index.
     
     + It could have a `limit_scope` key, which is a boolean and can impose a limitation of the scope of this unique key.
+  
+  + If `index` is an array of objects:
+  
+    + Each one of the objects must fulfil the requirements declared in the previous case.
 
 * __Foreign key values check__: When the `foreign_keys` attribute is declared, parts of the values in that part of the schema must correlate to the values obtained from a primary key from JSON documents following other JSON Schema. As there can be more than one foreign key, `foreign_keys` expects an array of objects describing each foreign key relation. Those objects must have next keys:
 

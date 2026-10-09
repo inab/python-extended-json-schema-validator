@@ -88,7 +88,7 @@ class PrimaryKey(UniqueKey):
 		super().__init__(
 			schemaURI, jsonSchemaSource=jsonSchemaSource, config=config, isRW=isRW
 		)
-		self.doPopulate: "Optional[Set[int]]" = None
+		self.doPopulate: "Optional[Set[str]]" = None
 		self.gotIdsSet: "Optional[MutableMapping[str, Sequence[InlinePKVal]]]" = None
 		self.warmedUp = False
 		self.PopulatedPKWorld: "IndexWorldType" = dict()
@@ -226,17 +226,17 @@ class PrimaryKey(UniqueKey):
 	def doDefaultPopulation(
 		self,
 		unique_def: "IndexDef",
-		unique_id: "int",
+		unique_id_str: "str",
 		is_validating: "bool",
 	) -> None:
-		if self.doPopulate is not None and unique_id not in self.doPopulate:
+		if self.doPopulate is not None and unique_id_str not in self.doPopulate:
 			# Deactivate future populations
 			# if a custom unique_world is not provided
-			self.doPopulate.add(unique_id)
+			self.doPopulate.add(unique_id_str)
 
 			if self.gotIdsSet:
 				if self._allow_provider_duplicates and is_validating:
-					new_unique_def = self.PopulatedPKWorld.get(unique_id)
+					new_unique_def = self.PopulatedPKWorld.get(unique_id_str)
 					# Do we have a shadow definition where to store?
 					if new_unique_def is None:
 						new_unique_def = IndexDef(
@@ -247,7 +247,7 @@ class PrimaryKey(UniqueKey):
 							limit_scope=unique_def.limit_scope,
 						)
 
-						self.PopulatedPKWorld[unique_id] = new_unique_def
+						self.PopulatedPKWorld[unique_id_str] = new_unique_def
 						self.PopulatedPKWorldByName[new_unique_def.name] = (
 							new_unique_def
 						)
@@ -333,7 +333,8 @@ class PrimaryKey(UniqueKey):
 			# Needed to populate the cache of ids
 			# and the unicity check
 			unique_id = id(schema)
-			uniqueDef = self.IndexWorld.get(unique_id)
+			unique_id_str = str(unique_id)
+			uniqueDef = self.IndexWorld.get(unique_id_str)
 			if uniqueDef is None:
 				if isinstance(unique_state, dict):
 					unique_members = unique_state["members"]
@@ -349,7 +350,7 @@ class PrimaryKey(UniqueKey):
 					unique_name = f"{self.randomKeyPrefix}_{unique_id}"
 
 				uniqueDef = self.IndexWorld.setdefault(
-					unique_id,
+					unique_id_str,
 					IndexDef(
 						indexLoc=IndexLoc(schemaURI=self.schemaURI, path="(unknown)"),
 						members=unique_members,
@@ -358,7 +359,7 @@ class PrimaryKey(UniqueKey):
 						values=dict(),
 					),
 				)
-				self.IndexWorld[unique_id] = uniqueDef
+				self.IndexWorld[unique_id_str] = uniqueDef
 				if unique_name in self.IndexWorldByName:
 					self.logger.warning(
 						f"Repeated named {self.randomKeyPrefix} '{unique_name}'. Be prepared for hairy responses."
@@ -368,7 +369,7 @@ class PrimaryKey(UniqueKey):
 
 			self.doDefaultPopulation(
 				unique_def=uniqueDef,
-				unique_id=unique_id,
+				unique_id_str=unique_id_str,
 				is_validating=True,
 			)
 
@@ -424,8 +425,8 @@ class PrimaryKey(UniqueKey):
 			ConsolidatedUniqueWorld = copy.copy(self.PopulatedPKWorld)
 			ConsolidatedUniqueWorldByName = copy.copy(self.PopulatedPKWorldByName)
 
-			for unique_id, uniqueDef in self.IndexWorld.items():
-				baseUniqueDef = ConsolidatedUniqueWorld.get(unique_id)
+			for unique_id_str, uniqueDef in self.IndexWorld.items():
+				baseUniqueDef = ConsolidatedUniqueWorld.get(unique_id_str)
 
 				# This copy is to isolate
 				if baseUniqueDef is None:
@@ -442,17 +443,17 @@ class PrimaryKey(UniqueKey):
 					limit_scope=baseUniqueDef.limit_scope,
 					values=newUniqueSet,
 				)
-				ConsolidatedUniqueWorld[unique_id] = newUniqueDef
+				ConsolidatedUniqueWorld[unique_id_str] = newUniqueDef
 				ConsolidatedUniqueWorldByName[uniqueDef.name] = newUniqueDef
 		else:
 			ConsolidatedUniqueWorld = self.IndexWorld
 			ConsolidatedUniqueWorldByName = self.IndexWorldByName
 
 		# Last, but not the least important
-		for unique_id, uniqueDef in ConsolidatedUniqueWorld.items():
+		for unique_id_str, uniqueDef in ConsolidatedUniqueWorld.items():
 			self.doDefaultPopulation(
 				unique_def=uniqueDef,
-				unique_id=unique_id,
+				unique_id_str=unique_id_str,
 				is_validating=False,
 			)
 
