@@ -329,6 +329,7 @@ jobs:
     name: Pull request with the newly generated contents
     needs:
       - pre-commit
+      - pre-commit-24_04
       - pre-commit-22_04
     steps:
       - name: Get analysis timestamp

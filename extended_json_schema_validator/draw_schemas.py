@@ -816,10 +816,11 @@ flowchart LR
 
 		canonical_node_id = graph_id + ":" + node_id if graph_id != node_id else node_id
 		indent_tabs = indent * "\t"
+		joined_object_nodes = "\n".join(object_nodes)
 		node_payload = f"""\
 {indent_tabs}subgraph {canonical_node_id}["{node_label}"]
 {indent_tabs}	
-{"\n".join(object_nodes)}
+{joined_object_nodes}
 {indent_tabs}end
 """
 		return node_payload
