@@ -771,7 +771,8 @@ flowchart LR
 		if required:
 			val = f"<b>{val}</b>"
 
-		return f'{indent * "\t"}{graph_id}:{hashed_key}["{val + preval}"]'
+		tab_indent = indent * "\t"
+		return f'{tab_indent}{graph_id}:{hashed_key}["{val + preval}"]'
 
 	def _genSubGraph(
 		self,

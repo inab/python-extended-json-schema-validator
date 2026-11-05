@@ -254,8 +254,14 @@ class IndexKey(AbstractCustomFeatureValidator):
 
 	JStepPat = re.compile(r"^([^\[]+)\[(0|[1-9][0-9]+)?\]$")
 
+	LiteralPat = re.compile(r"^'([^']*)'$")
+
 	@classmethod
 	def MaterializeJPath(cls, jsonDoc: "Any", jPath: str) -> "Sequence[Any]":
+		# This is needed to match cases where constants are part of either index or join keys
+		literal_match = cls.LiteralPat.search(jPath)
+		if literal_match is not None:
+			return (literal_match.group(1),)
 		objectives: "MutableSequence[Any]" = [jsonDoc]
 		jSteps = jPath.split(".") if jPath not in (".", "") else (None,)
 		for jStep in jSteps:

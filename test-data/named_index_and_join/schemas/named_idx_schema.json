@@ -1,0 +1,48 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "named_idx_example/1.0",
+    "title": "Named index implementation example",
+    "type": "object",
+    "properties": {
+        "@schema": {
+            "description": "The JSON schema id",
+            "type": "string",
+            "const": "named_idx_example/1.0"
+        },
+        "local_id": {
+            "description": "Submitter-local identifier (within investigation/hub) for experiment (in curie-format, if applicable)",
+            "type": "string"
+        },
+        "other_id": {
+            "description": "Another id",
+            "type": "string"
+        },
+        "ejemplo": {
+			"type": "object",
+			"properties": {
+				"local_id_2": {
+					"description": "Submitter-local identifier (within investigation/hub) for experiment (in curie-format, if applicable)",
+					"type": "string"
+				},
+				"other_id_2": {
+					"description": "Another unique id",
+					"type": "string"
+				}
+			},
+			"additionalProperties": false,
+			"index": {
+				"members": [ "local_id_2", "other_id_2" ],
+				"name": "2idx"
+			}
+		}
+    },
+    "index": {
+	"members": [ "local_id", "other_id" ],
+	"name": "named_idx"
+    },
+    "required": [
+        "local_id",
+	"ejemplo"
+    ],
+    "additionalProperties": false
+}

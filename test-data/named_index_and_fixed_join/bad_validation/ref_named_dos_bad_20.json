@@ -1,0 +1,6 @@
+{
+	"@schema": "fixed_join_to_named_idx/1.0",
+	"something": {
+		"ref_other_id": "20"
+	}
+}

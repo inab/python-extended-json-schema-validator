@@ -6,11 +6,11 @@ The extensions implemented are focused on features which involve more than one J
 
   + If `unique` is a _`true`_ JSON value, the whole value in that position is used for the uniqueness check.
   
-  + If `unique` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated.
+  + If `unique` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated. When one of these strings is single-quoted, it is understood the literal, constant value is used.
   
   + If `unique` is an object:
   
-    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings.
+    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings. When one of these strings is single-quoted, it is understood the literal, constant value is used.
     
     + It could have `name` key, which gives a labelling name.
     
@@ -24,11 +24,11 @@ The extensions implemented are focused on features which involve more than one J
 
   + If `primary_key` is a _`true`_ JSON value, the whole value in that position is used for the uniqueness check.
   
-  + If `primary_key` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated.
+  + If `primary_key` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated. When one of these strings is single-quoted, it is understood the literal, constant value is used.
   
   + If `primary_key` is an object:
   
-    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings.
+    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings. When one of these strings is single-quoted, it is understood the literal, constant value is used.
     
     + It could have `name` key, which gives a referencing name. This is useful for complex documents where several parts define their own primary keys, so foreign keys scope can be narrowed to an specific primary key.
     
@@ -70,11 +70,11 @@ primary_key:
 
   + If `index` is a _`true`_ JSON value, the whole value in that position is recorded.
   
-  + If `index` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated.
+  + If `index` is an array of strings, and the whole value is an object, those strings are the names of the keys whose values form the tuple to be validated. When one of these strings is single-quoted, it is understood the literal, constant value is used.
   
   + If `index` is an object:
   
-    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings.
+    + It must have `members` key, which plays the role to describe keys to be included, as it is explained above with _`true`_ and array of strings. When one of these strings is single-quoted, it is understood the literal, constant value is used.
     
     + It could have `name` key, which gives a referencing name. This is useful for complex documents where several parts define their own indexes, so join keys scope can be narrowed to an specific index.
     
@@ -88,7 +88,7 @@ primary_key:
 
   + `schema_id`: This optional key is the relative or absolute IRI of the JSON Schema describing the primary key. If it is not declared, it is the same as the document where it is declared this foreign key.
   
-  + `members`: This is an array of strings. Those strings are the names of the keys whose values form the tuple to be validated against the gathered primary key values.
+  + `members`: This is an array of strings. Those strings are the names of the keys whose values form the tuple to be validated against the gathered primary key values. When one of these strings is single-quoted, it is understood the literal, constant value is used.
   
   + `refers_to`: This optional key is used to tell which is the named primary key to be focused on. This is useful for complex JSON Schemas where a schema has more than one primary key declaration.
 
@@ -96,8 +96,8 @@ primary_key:
 
   + `schema_id`: This optional key is the relative or absolute IRI of the JSON Schema describing the index key. If it is not declared, it is the same as the document where it is declared this join key.
   
-  + `members`: This is an array of strings. Those strings are the names of the keys whose values form the tuple to be validated against the gathered primary key values.
+  + `members`: This is an array of strings. Those strings are the names of the keys whose values form the tuple to be validated against the gathered primary key values. When one of these strings is single-quoted, it is understood the literal, constant value is used.
   
-  + `refers_to`: This optional key is used to tell which is the named primary key to be focused on. This is useful for complex JSON Schemas where a schema has more than one primary key declaration.
+  + `refers_to`: This optional key is used to tell which is the named index key to be focused on. This is useful for complex JSON Schemas where a schema has more than one index key declaration.
 
 

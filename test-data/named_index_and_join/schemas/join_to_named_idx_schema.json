@@ -1,0 +1,45 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "join_to_named_idx/1.0",
+    "title": "join_key implementation example pointing to named index",
+    "type": "object",
+    "properties": {
+        "@schema": {
+            "description": "The JSON schema id",
+            "type": "string",
+            "const": "join_to_named_idx/1.0"
+        },
+        "something": {
+			"type": "object",
+			"properties": {
+				"ref_local_id": {
+					"description": "Part of an id referencing other one in a different schema",
+					"type": "string"
+				},
+				"ref_other_id": {
+					"description": "The other part of an id referencing other one in a different schema",
+					"type": "string"
+				}
+			},
+			"join_keys": [
+				{
+					"schema_id": "named_idx_example/1.0",
+					"refers_to": "named_idx",
+					"members": [
+						"ref_local_id",
+						"ref_other_id"
+					]
+				}
+			],
+			"additionalProperties": false,
+			"required": [
+				"ref_local_id",
+				"ref_other_id"
+			]
+		}
+    },
+    "required": [
+        "something"
+    ],
+    "additionalProperties": false
+}
